@@ -65,3 +65,7 @@ Started by a GitLab release created by hand (which creates its tag). Several mer
 - `--defer` in MR builds against the product dev manifest, to reduce rebuild costs.
 - Data contracts (ODCS generated from manifests), breaking-change checks against prod, publishing to Collibra.
 - How data product versions (releases) and contract versions are managed.
+
+## Pending decision: central platform repository
+
+`.scratch/dev-environment/issues/07-central-platform-repository.md` (status `needs-triage`) proposes moving the setup, dev-environment and deployment tooling into a central, versioned platform repository, so product repos keep only their dbt code. If accepted, it changes parts of this spec. That ticket lists the conflicts and open questions; resolve them with the user before implementing the affected parts.

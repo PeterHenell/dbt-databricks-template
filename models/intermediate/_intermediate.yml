@@ -1,0 +1,8 @@
+version: 2
+
+models:
+  - name: int_orders_aggregated_to_customer
+    description: Order totals per customer that has at least one order.
+    columns:
+      - name: customer_id
+        data_tests: [unique, not_null]

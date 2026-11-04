@@ -1,0 +1,16 @@
+# Team-level settings for personal development environments.
+# Committed and not secret: every developer on the team uses the same values.
+# Replace the placeholders when you create a repository from the template.
+
+[databricks]
+# Dev workspace URL, e.g. "https://adb-1234567890123456.7.azuredatabricks.net".
+host = "https://<dev-workspace-host>"
+# ID of the team's shared serverless SQL warehouse in the dev workspace.
+warehouse_id = "<shared-dev-sql-warehouse-id>"
+
+[catalogs]
+# The team catalog: personal environments are schemas in it (ADR 0001).
+team = "<team_catalog>"
+# This data product's product dev catalog (the release candidate). `make build-changed`
+# defers to the manifest its job runs publish in `_dbt_artifacts.state` (ADR 0006).
+product_dev = "<product_dev_catalog>"

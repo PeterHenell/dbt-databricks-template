@@ -12,3 +12,7 @@
 - [ ] The job runs on serverless or SQL warehouse compute suited to SQL-only models
 - [ ] `make` targets validate and deploy the bundle for a given target, and start a run
 - [ ] Deploying to `dev` and running the job by hand builds the sample project into the product dev catalog's `staging`, `intermediate` and `vN` schemas
+
+## Comments
+
+**2026-11-04 (pending decision, dev-environment#07):** dev-environment#07 proposes moving the bundle to a central platform repo: the bundle and `deploy/profiles.yml` would be rendered from central templates plus the product's `platform.toml` when the release artifact is built, not committed in each repo (conflicts with the first criterion and ADR 0002). Until 07 is triaged, build it as written, but keep everything product-specific in variables so it can become a template.

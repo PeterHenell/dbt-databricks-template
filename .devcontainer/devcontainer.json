@@ -1,0 +1,32 @@
+// Dev container for this repository: see docs/dev-container.md.
+{
+  "name": "dbt on Databricks",
+  "build": { "dockerfile": "Dockerfile" },
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true,
+  "containerEnv": {
+    "DBT_DEVCONTAINER": "1",
+    // The container's virtualenv lives outside the workspace, so it never clashes
+    // with a .venv made on the host (another OS).
+    "UV_PROJECT_ENVIRONMENT": "/home/vscode/venv",
+    "UV_LINK_MODE": "copy",
+    "PATH": "/home/vscode/venv/bin:${containerEnv:PATH}"
+  },
+  "mounts": [
+    // Login token caches, kept across container rebuilds; never in the workspace.
+    "source=dbt-databricks-cli-auth,target=/home/vscode/.databricks,type=volume",
+    "source=dbt-databricks-sdk-auth,target=/home/vscode/.config/databricks-sdk-py,type=volume",
+    "source=dbt-databricks-uv-cache,target=/home/vscode/.cache/uv,type=volume",
+    "source=dbt-databricks-venv-${devcontainerId},target=/home/vscode/venv,type=volume"
+  ],
+  // OAuth (U2M) callback of `databricks auth login` and of dbt-databricks.
+  "forwardPorts": [8020],
+  "portsAttributes": { "8020": { "label": "Databricks OAuth callback", "onAutoForward": "silent" } },
+  "postCreateCommand": "uv sync --locked",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "redhat.vscode-yaml"],
+      "settings": { "python.defaultInterpreterPath": "/home/vscode/venv/bin/python" }
+    }
+  }
+}

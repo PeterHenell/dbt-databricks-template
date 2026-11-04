@@ -1,0 +1,5 @@
+# dbt on local Apache Spark (session method: PySpark in the dbt process). Only used
+# inside the local container; the host toolchain (pyproject.toml) is for Databricks.
+dbt-core==1.12.5
+dbt-spark[session]==1.11.0
+pyspark==4.2.0

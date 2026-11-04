@@ -1,0 +1,64 @@
+# Local engine for trying the dbt project without Databricks: Apache Spark with
+# Delta Lake, and its table catalog (Hive metastore) in Postgres.
+#
+#   make local-up        start the metastore database
+#   make local-sources   create the stand-in `tpch` source tables
+#   make local-dbt       dbt build (or ARGS="...")
+#   make local-sql       Spark SQL shell
+#   make local-down      stop; make local-clean also deletes all local data
+#
+# Differences from Databricks: no Unity Catalog (schema.table only), no
+# serverless SQL warehouse, no OAuth. Spark SQL is close to Databricks SQL but
+# not identical, so a green local build doesn't replace a build on Databricks.
+
+name: dbt-local
+
+services:
+  metastore-db:
+    image: docker.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_DB: metastore
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive
+    volumes:
+      - ./metastore/init:/docker-entrypoint-initdb.d:ro
+      - metastore-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hive -d metastore"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Run on demand: `make local-dbt ARGS="build --select customers"`.
+  dbt:
+    build: .
+    image: localhost/dbt-local-spark
+    working_dir: /project
+    environment:
+      DBT_PROFILES_DIR: /project/local
+      # Keep local artifacts apart from the Databricks ones in ./target.
+      DBT_TARGET_PATH: /project/target/local
+      DBT_LOG_PATH: /project/logs/local
+      LOCAL_ALIAS: ${LOCAL_ALIAS:-local}
+    volumes:
+      - ..:/project:z
+      - spark-warehouse:/data/warehouse
+    depends_on:
+      metastore-db:
+        condition: service_healthy
+
+  # Spark SQL shell on the same catalog: `make local-sql`.
+  spark-sql:
+    image: localhost/dbt-local-spark
+    working_dir: /project
+    entrypoint: ["spark-sql"]
+    volumes:
+      - ..:/project:z
+      - spark-warehouse:/data/warehouse
+    depends_on:
+      metastore-db:
+        condition: service_healthy
+
+volumes:
+  metastore-db:
+  spark-warehouse:

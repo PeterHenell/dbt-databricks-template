@@ -1,0 +1,16 @@
+# Profile for the LOCAL engine only: Apache Spark in a container (local/compose.yml),
+# used with `make local-dbt` (DBT_PROFILES_DIR=/project/local inside the container).
+# It is for trying dbt changes without Databricks; it is not a personal Databricks
+# environment and has no Unity Catalog (Spark's Hive catalog is schema.table only).
+#
+# Schemas follow the dev naming: <product>__<alias>__<layer>, alias from LOCAL_ALIAS.
+# The profile name must equal the dbt project name (the data product name).
+sample_product:
+  target: local
+  outputs:
+    local:
+      type: spark
+      method: session
+      host: localhost  # required by dbt-spark, not used in session mode
+      schema: "sample_product__{{ env_var('LOCAL_ALIAS', 'local') }}"
+      threads: 1

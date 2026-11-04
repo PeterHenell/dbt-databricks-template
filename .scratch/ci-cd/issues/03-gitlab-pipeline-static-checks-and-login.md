@@ -13,3 +13,7 @@
 - [ ] GitLab jobs log in to Databricks with OIDC workload identity federation. It is confirmed that Databricks accepts GitLab as an issuer, and the federation policy the platform team must create is documented
 - [ ] The fallback (OAuth client ID and secret in masked, protected CI variables) is documented
 - [ ] Merging to `main` deploys nothing
+
+## Comments
+
+**2026-11-04 (pending decision, dev-environment#07):** dev-environment#07 proposes that pipeline jobs live in a central GitLab CI/CD component (`include: component: …@1`) running a central platform image, instead of `.gitlab-ci.yml` calling this repo's `make` targets in a standard Python image (conflicts with the first two criteria). Check the status of 07 before implementing; if 07 is still open, ask the user which to follow.

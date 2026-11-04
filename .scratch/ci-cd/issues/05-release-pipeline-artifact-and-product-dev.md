@@ -13,3 +13,7 @@
 - [ ] Which characters GitLab allows in package versions is checked, and the rule for release tag names is documented
 - [ ] The unpacked archive is deployed with `-t dev` using the product dev identity, in `resource_group: product-dev`
 - [ ] The pipeline starts the product dev job, waits for it, and fails if the run fails
+
+## Comments
+
+**2026-11-04 (pending decision, dev-environment#07):** dev-environment#07 keeps this artifact but changes where its parts come from: `deploy/` and the bundle would be rendered centrally at artifact build time, and the artifact must also record the platform version used, so a rollback rolls back platform code too.

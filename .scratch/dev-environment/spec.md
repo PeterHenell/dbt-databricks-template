@@ -25,6 +25,7 @@ Result of the grilling session on 2026-11-04. Terms follow `GLOSSARY.md`; the re
 ## Developer setup (`make setup`)
 
 - Developers run dbt locally. The Python toolchain is pinned (e.g. `uv` with a lockfile).
+- Developers may use macOS, Linux or Windows: the toolkit runs in a Docker-based dev container (`.devcontainer/`), so the Makefile and scripts only have to work in one Linux environment (ticket 06).
 - Authentication is OAuth user-to-machine (`auth_type: oauth`) through the Databricks CLI login.
 - Compute is one shared serverless SQL warehouse for dev.
 - Setup suggests a developer alias: the first 2 letters of the first name plus the first 2 of the last name (`Peter Henell` → `pehe`), with non-ASCII letters converted (`Åsa Öberg` → `asob`). The developer can accept or change it.
@@ -75,3 +76,7 @@ Data operations are dbt macros run with `dbt run-operation`; setup is a script u
 ## CI and deployment
 
 Decided in the second grilling session; see `.scratch/ci-cd/spec.md`.
+
+## Pending decision: central platform repository
+
+`.scratch/dev-environment/issues/07-central-platform-repository.md` (status `needs-triage`) proposes moving the setup, dev-environment and deployment tooling into a central, versioned platform repository, so product repos keep only their dbt code. If accepted, it changes parts of this spec. That ticket lists the conflicts and open questions; resolve them with the user before implementing the affected parts.

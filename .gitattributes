@@ -1,0 +1,6 @@
+# LF everywhere, also in Windows checkouts: the Makefile and scripts run in the
+# Linux dev container (.devcontainer/), where CRLF breaks shell recipes.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.zip binary

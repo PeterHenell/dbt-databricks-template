@@ -1,0 +1,13 @@
+# Personal dev profile written by `make setup` (ADR 0002). Never commit it.
+/profiles.yml
+
+# dbt
+target/
+dbt_packages/
+logs/
+.user.yml
+
+# Python / uv
+.venv/
+__pycache__/
+.pytest_cache/

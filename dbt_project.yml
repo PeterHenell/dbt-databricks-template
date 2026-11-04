@@ -1,0 +1,50 @@
+# The dbt project name IS the data product name (one repository = one data product).
+# It is the prefix of every personal environment (`<product>__<alias>__<layer>`) and
+# the profile name. dbt cannot read the profile name from a variable, so `profile`
+# must repeat it; `make setup` refuses to run if the two differ.
+name: sample_product
+profile: sample_product
+
+version: "1.0.0"
+config-version: 2
+require-dbt-version: [">=1.12.0", "<2.0.0"]
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests/dbt"]
+seed-paths: ["seeds"]
+snapshot-paths: ["snapshots"]
+analysis-paths: ["analyses"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+on-run-start:
+  - "{{ assert_published_models_are_versioned() }}"
+
+vars:
+  # Where a personal environment reads sources from: prod | clone | sample (macros/source_modes.sql).
+  # Prod and MR targets ignore it. Override per run: --vars '{dev_source_mode: prod}'.
+  dev_source_mode: clone
+  # Where the sources live in prod. Override per run with `--vars`, or per target
+  # in the source YAML.
+  tpch_catalog: samples
+  tpch_schema: tpch
+
+models:
+  sample_product:
+    # Delta is Databricks' default; stating it keeps the local Spark engine (local/) the same.
+    +file_format: delta
+    # Each folder is one layer, stored in its own schema (see macros/generate_schema_name.sql).
+    staging:
+      +schema: staging
+      +materialized: view
+    intermediate:
+      +schema: intermediate
+      +materialized: view
+    published:
+      # The published interface: enforced contracts on every model (ADR 0004).
+      # Every model here must be versioned; version N goes to schema `vN`.
+      +schema: published
+      +materialized: table
+      +contract:
+        enforced: true

@@ -12,3 +12,7 @@
 - [ ] Release workflow: MR → merge → GitLab release → product dev test → manual `deploy-prod`
 - [ ] Rollback, and the documented-only hotfix route (see ADR 0007)
 - [ ] Uses the vocabulary in `GLOSSARY.md`
+
+## Comments
+
+**2026-11-04 (pending decision, dev-environment#07):** If dev-environment#07 is accepted, adopting means creating a repo from a slim template (dbt code, `platform.toml`, `packages.yml`, stubs, thin Makefile, `devcontainer.json`, 5-line `.gitlab-ci.yml`), and the guide must explain the platform version policy (automatic 1.x updates, opt-in major versions, pinning).
