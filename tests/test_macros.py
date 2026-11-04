@@ -5,6 +5,7 @@ connection (and no login) is needed.
 """
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -66,3 +67,29 @@ def test_clean_dev_with_nothing_to_drop(tmp_path):
                            {"dry_run": True, "schemas": SCHEMAS})
     assert result.returncode == 0
     assert result.stdout.startswith("Nothing to drop")
+
+
+def run_mr_operation(tmp_path: Path, target: str, args: dict) -> subprocess.CompletedProcess:
+    """drop_mr_environment through the deployment profile (deploy/profiles.yml)."""
+    env = {**os.environ, "DBT_HOST": "adb-1.2.azuredatabricks.net", "DBT_ACCESS_TOKEN": "unused"}
+    return subprocess.run(
+        ["dbt", "-q", "run-operation", "drop_mr_environment", "--args", json.dumps(args),
+         "--profiles-dir", "deploy", "--target", target,
+         "--vars", "{deploy_catalog: team_x, deploy_warehouse_id: wh1}",
+         "--target-path", str(tmp_path / "target"), "--log-path", str(tmp_path / "logs")],
+        cwd=REPO_ROOT, env=env, capture_output=True, text=True, check=False, timeout=180,
+    )
+
+
+def test_mr_build_drops_only_the_mr_schemas(tmp_path):
+    schemas = SCHEMAS + ["sample_product__mr", "sample_product__mr__v1", "sample_product__mrx__staging"]
+    result = run_mr_operation(tmp_path, "mr", {"dry_run": True, "schemas": schemas})
+    assert result.returncode == 0, result.stdout + result.stderr
+    listed = [line.strip() for line in result.stdout.splitlines() if line.startswith("  ")]
+    assert listed == ["sample_product__mr", "sample_product__mr__staging", "sample_product__mr__v1"]
+
+
+def test_mr_drop_refuses_prod_target(tmp_path):
+    result = run_mr_operation(tmp_path, "prod", {"dry_run": True, "schemas": SCHEMAS})
+    assert result.returncode != 0
+    assert "only runs in target 'mr'" in result.stdout + result.stderr

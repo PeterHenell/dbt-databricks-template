@@ -1,3 +1,7 @@
 # Job runs publish dbt artifacts to a volume in their own product catalog
 
 Every successful job run writes its `manifest.json` and `run_results.json` to the Unity Catalog volume `_dbt_artifacts.state` in the catalog it built, under `latest/` and `runs/<run_id>/`. Artifacts come from job runs, not from the CI/CD pipelines, so they always describe something that was actually built. A failed run publishes nothing. Developers' deferred builds use the **product dev** `latest/` manifest, which belongs to the latest release candidate. The dev workspace can read prod catalogs, so the prod artifacts are readable too. We rejected a central artifacts catalog shared by all products, because it would need the platform team. The cost is one internal, non-consumer schema in each product catalog.
+
+## Consequences
+
+- The job has a second task that publishes the artifacts after a successful dbt task, from the dbt task's archived output. Pointing dbt's `--target-path` at the volume was rejected: dbt writes `run_results.json` even when the build fails (`docs/ci-cd.md`).

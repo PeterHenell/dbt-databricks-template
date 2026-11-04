@@ -1,21 +1,34 @@
 # Deployment profile, used ONLY with `--profiles-dir deploy` (ADR 0002).
 # Never copy it to the repository root: it would replace every developer's dev profile.
 #
-# It holds no environment-specific values (ADR 0008). The deployment (Databricks
-# Asset Bundle target / CI variables) sets the environment variables, so the same
-# file builds the product dev catalog and the product prod catalog.
-# Authentication is service principal OAuth (machine-to-machine).
+# It holds no environment-specific values (ADR 0008). Whoever runs dbt supplies them:
+#   DBT_HOST          workspace host. Set by Databricks in the job's dbt task; set by
+#                     `scripts/ci.py` in CI.
+#   DBT_ACCESS_TOKEN  OAuth token of the identity that runs dbt. Set by Databricks for
+#                     the job's run-as identity; set by `scripts/ci.py` from the CI login.
+#   --vars '{deploy_catalog: ..., deploy_warehouse_id: ...}'  passed by the bundle's job
+#                     (resources/dbt_job.yml) or by the Makefile's CI targets.
 sample_product:
   target: prod
   outputs:
+    # Product dev and product prod (the bundle's job): plain `<layer>` schemas.
     prod:
       type: databricks
-      host: "{{ env_var('DBT_DATABRICKS_HOST') }}"
-      http_path: "{{ env_var('DBT_DATABRICKS_HTTP_PATH') }}"
-      catalog: "{{ env_var('DBT_CATALOG') }}"
+      host: "{{ env_var('DBT_HOST') }}"
+      http_path: "/sql/1.0/warehouses/{{ var('deploy_warehouse_id') }}"
+      catalog: "{{ var('deploy_catalog') }}"
       # Every model sets a layer schema; this is only the fallback for nodes without one.
       schema: default
-      auth_type: oauth
-      client_id: "{{ env_var('DBT_DATABRICKS_CLIENT_ID') }}"
-      client_secret: "{{ env_var('DBT_DATABRICKS_CLIENT_SECRET') }}"
+      token: "{{ env_var('DBT_ACCESS_TOKEN') }}"
+      threads: 8
+
+    # MR builds (ADR 0009): `<product>__mr__<layer>` in the team catalog.
+    # The schema must be `<product>__mr` (tests/test_bundle.py checks it).
+    mr:
+      type: databricks
+      host: "{{ env_var('DBT_HOST') }}"
+      http_path: "/sql/1.0/warehouses/{{ var('deploy_warehouse_id') }}"
+      catalog: "{{ var('deploy_catalog') }}"
+      schema: sample_product__mr
+      token: "{{ env_var('DBT_ACCESS_TOKEN') }}"
       threads: 8

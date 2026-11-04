@@ -8,6 +8,8 @@ logs/
 .user.yml
 
 # Python / uv
+# CI cache: uv packages and the pinned tools (make ci-tools)
+.cache/
 .venv/
 __pycache__/
 .pytest_cache/

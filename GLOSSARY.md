@@ -27,6 +27,17 @@ _Avoid_: deploy (for the bundle of changes)
 The version of a released, deployed package of the data product; every release is a new data product version, whether or not the published interface changed.
 _Avoid_: contract version (that versions the interface)
 
+**Release artifact**:
+The one archive a release builds (bundle, dbt project, installed packages, deployment profile), stored in GitLab's package registry and deployed unchanged to product dev and prod.
+_Avoid_: build, package (without "release")
+
+**Team identity**:
+The service principal that MR and `main` pipelines use; it can write only the team catalog.
+
+**Product identity**:
+The service principal that deploys and runs one data product in one environment: the product dev identity or the product prod identity.
+_Avoid_: deploy user, CI user
+
 ## Data product
 
 **Data product**:
@@ -64,6 +75,10 @@ _Avoid_: sandbox, dev schema (singular)
 
 **Source mode**:
 Where a personal environment reads its sources from: `prod` (directly), `clone` (personal shallow clones) or `sample` (personal small samples).
+
+**MR build**:
+The full build of a merge request's code into the shared `<product>__mr__*` schemas in the team catalog; one runs at a time.
+_Avoid_: CI build, PR environment
 
 **Deferred build**:
 A dev build of only the changed models, with references to unchanged models resolved against the prod deployment.

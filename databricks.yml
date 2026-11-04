@@ -1,0 +1,73 @@
+# Databricks Asset Bundle: deploys this data product as one job (resources/dbt_job.yml).
+#
+# Environment-specific values live ONLY in the targets below (ADR 0008): the release
+# artifact is the same for product dev and prod, and the target picks host, catalog,
+# warehouse and identity at deploy time. Replace the <placeholders> when you create a
+# repository from the template; `dev` must agree with config/dev-environment.toml.
+#
+#   make bundle-validate TARGET=dev     make bundle-deploy TARGET=dev     make bundle-run TARGET=dev
+bundle:
+  # Must equal the dbt project name (dbt_project.yml), i.e. the data product name.
+  name: sample_product
+
+include:
+  - resources/*.yml
+
+# Deploy from the unpacked release artifact (`make artifact`, scripts/release.py), not
+# from the repository: it holds only what the job needs. Installed dbt packages are
+# part of it (ADR 0008) and the job never runs `dbt deps`, but git ignores them, so
+# include them explicitly. (Without packages the CLI warns that the pattern matches
+# no files; that's harmless.)
+sync:
+  include:
+    - dbt_packages/**
+
+variables:
+  catalog:
+    description: The product catalog the job builds (product dev or product prod).
+  warehouse_id:
+    description: ID of the SQL warehouse that runs the models.
+  service_principal:
+    description: Application ID of the product identity the job runs as.
+  schedule:
+    description: Quartz cron expression for the scheduled run (prod only).
+    default: "0 0 5 * * ?"
+  timezone:
+    default: UTC
+
+# The job runs as the product identity of the target, never as the person or pipeline
+# that deployed it.
+run_as:
+  service_principal_name: ${var.service_principal}
+
+targets:
+  # Product dev: the release candidate (ADR 0007). No schedule; only release pipelines
+  # (or a hand-started run) run it.
+  dev:
+    default: true
+    mode: production
+    workspace:
+      host: https://<dev-workspace-host>
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: <product_dev_catalog>
+      warehouse_id: <product-dev-sql-warehouse-id>
+      service_principal: <product-dev-service-principal-application-id>
+
+  # Product prod: deployed by the manual `deploy-prod` job; the schedule runs it.
+  prod:
+    mode: production
+    workspace:
+      host: https://<prod-workspace-host>
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: <product_prod_catalog>
+      warehouse_id: <product-prod-sql-warehouse-id>
+      service_principal: <product-prod-service-principal-application-id>
+    resources:
+      jobs:
+        dbt_build:
+          schedule:
+            quartz_cron_expression: ${var.schedule}
+            timezone_id: ${var.timezone}
+            pause_status: UNPAUSED

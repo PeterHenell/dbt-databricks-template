@@ -12,6 +12,8 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8",
+    "sqlfluff>=3.4",
+    "yamllint>=1.37",
 ]
 
 [tool.uv]

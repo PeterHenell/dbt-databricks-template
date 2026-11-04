@@ -64,7 +64,18 @@
 #}
 {% macro drop_personal_environment(dry_run=true, schemas=none) %}
     {%- if execute -%}
-        {%- set environment = personal_environment_schema() -%}
+        {%- do drop_environment_schemas(personal_environment_schema(), dry_run, schemas) -%}
+    {%- endif -%}
+{% endmacro %}
+
+
+{#-
+  Drop `environment` (`<product>__<name>`) and every `<environment>__*` schema in the
+  target catalog. Shared by `make clean-dev` and the MR build (macros/mr_environment.sql);
+  callers check that `environment` is theirs to drop.
+-#}
+{% macro drop_environment_schemas(environment, dry_run, schemas=none) %}
+    {%- if execute -%}
         {%- set catalog = target.database -%}  {#- none on the local Spark engine -#}
         {%- set where = 'catalog ' ~ catalog if catalog else 'the local catalog' -%}
         {%- set all_schemas = schemas if schemas is not none else list_catalog_schemas(catalog) -%}

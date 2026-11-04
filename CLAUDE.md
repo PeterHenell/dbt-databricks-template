@@ -15,11 +15,11 @@ Beyond those, the template should embody dbt best practices (project layering, n
 
 ## Current state
 
-Personal development environments are built (`.scratch/dev-environment/`, tickets 01–06), but only verified offline and on the local Spark engine, not yet on a Databricks workspace. Deployment (`.scratch/ci-cd/`) is not built yet; when it is, document here which tool, which targets and what CI triggers it. Do not document conventions here until they exist in the repo.
+Personal development environments are built (`.scratch/dev-environment/`, tickets 01–06), but only verified offline and on the local Spark engine, not yet on a Databricks workspace. Deployment is built (`.scratch/ci-cd/`, tickets 01–07), but only verified offline: unit tests, `databricks bundle validate` against a fake workspace API (`tests/mock_databricks.py`), and the static CI jobs in the CI image. It has not run in GitLab or on Databricks; the list is in `docs/ci-cd.md`, "Not verified yet". Do not document conventions here until they exist in the repo.
 
 **Pending decision:** `.scratch/dev-environment/issues/07-central-platform-repository.md` (`needs-triage`) proposes moving the tooling (`scripts/`, the platform macros, `local/`, the dev container image, CI/CD and the bundle) into a central, versioned platform repository. It conflicts with ADR 0002 and with ci-cd#01, #03, #05, #07 and dev-environment#06; each of those carries a note. Read ticket 07's "For the agent picking this up" before working on any of them, and don't implement 07 until the user has answered its open questions.
 
-**Not yet verified on Databricks** (details in each ticket's `## Comments`): the OAuth flows (`make setup`, dbt's browser login, inside the dev container), `make clean-dev`, `make clone-sources` (incl. whether `samples.tpch` can be shallow-cloned), `make build-changed` (needs ci-cd#02 first; the "no manifest" CLI error text is guessed), and opening the dev container in VS Code or Docker Desktop. Deviation to keep in mind: source views get a proxy view in the clone schema instead of resolving to the prod name (dev-environment#04).
+**Not yet verified on Databricks** (details in each ticket's `## Comments`): the OAuth flows (`make setup`, dbt's browser login, inside the dev container), `make clean-dev`, `make clone-sources` (incl. whether `samples.tpch` can be shallow-cloned), `make build-changed` (needs a real ci-cd#02 job run first; the "no manifest" CLI error text is guessed), and opening the dev container in VS Code or Docker Desktop. Deviation to keep in mind: source views get a proxy view in the clone schema instead of resolving to the prod name (dev-environment#04).
 
 ## Commands
 
@@ -35,11 +35,22 @@ uv run dbt test --select stg_tpch__orders     # tests of one model
 uv run dbt build --vars '{dev_source_mode: prod}'   # read prod sources directly for this run
 make build-changed                            # deferred build: only state:modified+, rest from product dev
 make clean-dev                                # drop your whole personal environment (asks first)
-make test-tooling                             # pytest: scripts/ and the macros (no Databricks needed)
+make test-tooling                             # pytest: scripts/, the macros, bundle + CI config (no Databricks needed)
 uv run dbt parse                              # offline check of the project (no connection needed)
+make lint parse                               # sqlfluff + yamllint; offline dbt parse with the deploy profile
+make artifact bundle-deploy bundle-run TARGET=dev   # hand deploy + run in product dev (normally the release pipeline does this)
 ```
 
-Prod-style builds use the committed deployment profile and only with `--profiles-dir deploy` (env vars `DBT_DATABRICKS_HOST`, `DBT_DATABRICKS_HTTP_PATH`, `DBT_CATALOG`, `DBT_DATABRICKS_CLIENT_ID`, `DBT_DATABRICKS_CLIENT_SECRET`).
+Prod-style builds use the committed deployment profile and only with `--profiles-dir deploy`: env vars `DBT_HOST` and `DBT_ACCESS_TOKEN`, plus `--vars '{deploy_catalog: …, deploy_warehouse_id: …}'`. Targets: `prod` (the job; plain `<layer>` schemas) and `mr` (MR builds; `<product>__mr__<layer>`).
+
+## Deployment (how it works)
+
+Details in `docs/ci-cd.md`; the adoption guide is `README.md`.
+
+- **Databricks Asset Bundle** (`databricks.yml`, `resources/dbt_job.yml`): one job, a `dbt_build` task (serverless environment, models run on the SQL warehouse) followed by `publish_dbt_artifacts` (`scripts/publish_dbt_artifacts.py`, writes `manifest.json`/`run_results.json` to `/Volumes/<catalog>/_dbt_artifacts/state/{runs/<run_id>,latest}/` only after a successful build). Targets: `dev` (product dev catalog, no schedule) and `prod` (product prod catalog, cron). Environment-specific values live only in the targets. The job runs as the target's product identity. Job environment pins must match `uv.lock` (tested).
+- **Release artifact** (`scripts/release.py`): tracked bundle/dbt files + installed `dbt_packages/` + `RELEASE.json`; built once per tag into GitLab's generic package registry; every deploy (CI or `make bundle-deploy`) goes from the unpacked artifact in `target/release/bundle/`.
+- **GitLab** (`.gitlab-ci.yml`, jobs only call `make`): MR → static checks + `mr-build` (`scripts/mr_build.py`: drop `<product>__mr__*`, full `dbt build --target mr`, team identity, `resource_group: mr-build`); `main` → static checks only; release tag → `release-check` → `release-artifact` → `product-dev` (deploy + run) → `validate-prod` → manual `deploy-prod` (no run). The team identity logs in with OIDC (`subject_claim: project_path`); the product identities default to client ID + secret in protected variables, because a federation policy can't be limited to release tags.
+- CI tools: `make ci-tools` installs uv and the Databricks CLI at the versions in `.devcontainer/Dockerfile`.
 
 ### Local engine (no Databricks)
 

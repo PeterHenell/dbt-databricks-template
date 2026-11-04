@@ -1,0 +1,72 @@
+# The data product's one job: `dbt build`, then publish its dbt artifacts (ADR 0006).
+# Values in ${var.*} come from the bundle target (databricks.yml).
+resources:
+  # Where successful runs publish manifest.json and run_results.json (ADR 0006):
+  # /Volumes/<catalog>/_dbt_artifacts/state/{latest,runs/<run_id>}/
+  # Internal, not part of the published interface. The bundle owns it: if the schema
+  # was created by hand first, drop it or remove it from here, or the deploy fails.
+  schemas:
+    dbt_artifacts:
+      catalog_name: ${var.catalog}
+      name: _dbt_artifacts
+      comment: dbt artifacts of successful job runs (ADR 0006). Internal; not for consumers.
+
+  volumes:
+    dbt_artifacts_state:
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.dbt_artifacts.name}
+      name: state
+      volume_type: MANAGED
+
+  jobs:
+    dbt_build:
+      name: ${bundle.name}
+      description: Builds and tests the data product (dbt build) and publishes its dbt artifacts.
+      max_concurrent_runs: 1
+      queue:
+        enabled: true
+      timeout_seconds: 14400
+      # The schedule is set by the prod target only (databricks.yml).
+
+      tasks:
+        - task_key: dbt_build
+          environment_key: dbt
+          dbt_task:
+            project_directory: ../
+            # The committed deployment profile (ADR 0002). Databricks sets DBT_HOST and
+            # DBT_ACCESS_TOKEN (the run-as identity's token); catalog and warehouse are
+            # passed as vars so the profile holds no environment-specific values.
+            profiles_directory: deploy
+            commands:
+              - 'dbt build --target prod --vars "{deploy_catalog: ${var.catalog}, deploy_warehouse_id: ${var.warehouse_id}}"'
+
+        # Runs only if dbt_build succeeded (the default run_if: ALL_SUCCESS), so a failed
+        # run publishes nothing and latest/ always describes a successful build.
+        - task_key: publish_dbt_artifacts
+          depends_on:
+            - task_key: dbt_build
+          environment_key: publish
+          spark_python_task:
+            python_file: ../scripts/publish_dbt_artifacts.py
+            parameters:
+              - --job-run-id
+              - "{{job.run_id}}"
+              - --dbt-task-key
+              - dbt_build
+              - --volume
+              - /Volumes/${var.catalog}/_dbt_artifacts/state
+
+      # Serverless job compute; the models themselves run on the SQL warehouse.
+      # Versions must match uv.lock (tests/test_bundle.py checks this).
+      environments:
+        - environment_key: dbt
+          spec:
+            environment_version: "4"
+            dependencies:
+              - dbt-core==1.12.5
+              - dbt-databricks==1.12.8
+        - environment_key: publish
+          spec:
+            environment_version: "4"
+            dependencies:
+              - databricks-sdk==0.117.0

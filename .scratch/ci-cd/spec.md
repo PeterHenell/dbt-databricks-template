@@ -53,12 +53,12 @@ Started by a GitLab release created by hand (which creates its tag). Several mer
 - Rollback: re-run an earlier release's `deploy-prod` job. Code and job definition go back; data does not and is rebuilt by the next scheduled run.
 - Hotfixes are possible but not a supported path; see ADR 0007. Documented only.
 
-## To verify when building
+## To verify when building (results, 2026-11-04, from docs and offline tests; see `docs/ci-cd.md`)
 
-- How the bundle's dbt task exposes `target/`: point `--target-path` at the volume, or add a follow-up copy task.
-- Whether Databricks workload identity federation accepts GitLab as an issuer, and how to set it up.
-- Which characters GitLab allows in generic package versions (must fit release tag names).
-- Whether the GitLab tier includes protected environments with deployment approvals.
+- `target/` of the dbt task: neither. A follow-up task reads the dbt task's archived output (`dbt_output.artifacts_link`), because dbt writes `run_results.json` even on failure (ci-cd#02).
+- GitLab as issuer: yes (`env-oidc`). But Databricks matches the subject exactly and GitLab's `sub` contains the ref, so only the team identity uses OIDC (`subject_claim: project_path`); the product identities default to the client-secret fallback with protected tags (ci-cd#03).
+- Package versions: `\A(\.?[\w+-]+\.?)+\z`; release tags like `v1.4.0` (ci-cd#05).
+- Deployment approvals and protected environments: Premium/Ultimate. Free tier: protected tags and protected variables (ci-cd#06). Our tier is still to be confirmed.
 
 ## Deferred
 

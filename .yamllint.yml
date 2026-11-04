@@ -1,0 +1,14 @@
+# YAML lint (`make lint`).
+extends: default
+# Skip everything git ignores (.venv/, target/, dbt_packages/, the CI cache .cache/).
+ignore-from-file: .gitignore
+rules:
+  line-length:
+    max: 140
+  document-start: disable
+  truthy:
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
+  indentation:
+    indent-sequences: consistent

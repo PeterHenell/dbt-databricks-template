@@ -1,0 +1,190 @@
+# GitLab CI/CD for this data product (docs/ci-cd.md; ADRs 0006-0009).
+# Every job only calls `make` targets: the logic lives in the Makefile and scripts/.
+#
+#   merge request  static checks, security scans, MR full build (team identity)
+#   main           static checks, security scans. Nothing is deployed (ADR 0007).
+#   release tag    check tag -> artifact (built once) -> deploy + run in product dev
+#                  -> validate prod -> manual deploy-prod (ADR 0008)
+#
+# CI/CD variables to set in the project (Settings > CI/CD > Variables), see docs/ci-cd.md:
+#   DATABRICKS_OIDC_AUDIENCE    audience of the GitLab ID token (your Databricks account ID)
+#   TEAM_CLIENT_ID              application ID of the team identity (OIDC)
+#   PRODUCT_DEV_CLIENT_ID       application ID of the product dev identity   (protected)
+#   PRODUCT_DEV_CLIENT_SECRET   its OAuth secret                  (masked, protected)
+#   PRODUCT_PROD_CLIENT_ID      application ID of the product prod identity  (protected)
+#   PRODUCT_PROD_CLIENT_SECRET  its OAuth secret                  (masked, protected)
+# Protected variables only reach protected refs: protect the release tags (e.g. `v*`).
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+stages:
+  - test
+  - mr-build
+  - release
+  - product-dev
+  - prod
+
+include:
+  # GitLab's built-in scanners (available on every tier); their jobs run in stage `test`.
+  - template: Jobs/SAST.gitlab-ci.yml
+  - template: Jobs/Secret-Detection.gitlab-ci.yml
+
+variables:
+  UV_CACHE_DIR: $CI_PROJECT_DIR/.cache/uv
+  UV_LINK_MODE: copy
+  CI_TOOLS_DIR: $CI_PROJECT_DIR/.cache/tools
+  # Databricks login per identity: env-oidc (workload identity federation, no stored
+  # secret) or oauth-m2m (client ID and secret). Override in the project's CI/CD variables.
+  # The product identities default to oauth-m2m: Databricks matches the token's subject
+  # exactly, and GitLab's subject contains the tag, so no federation policy can say
+  # "release tags only" (docs/ci-cd.md, "Logging in to Databricks").
+  TEAM_AUTH_TYPE: env-oidc
+  PRODUCT_DEV_AUTH_TYPE: oauth-m2m
+  PRODUCT_PROD_AUTH_TYPE: oauth-m2m
+
+# ---- Building blocks ----
+
+# Standard Python image; pinned uv and Databricks CLI from `make ci-tools` (cached).
+.tooling:
+  image: python:3.12-bookworm
+  cache:
+    key:
+      files:
+        - uv.lock
+        - .devcontainer/Dockerfile
+    paths:
+      - .cache/uv
+      - .cache/tools
+  before_script:
+    - make ci-tools
+
+# The GitLab ID token that Databricks exchanges for an OAuth token (env-oidc).
+.databricks-login:
+  id_tokens:
+    DATABRICKS_OIDC_TOKEN:
+      aud: $DATABRICKS_OIDC_AUDIENCE
+
+.as-team:
+  extends: .databricks-login
+  variables:
+    DATABRICKS_AUTH_TYPE: $TEAM_AUTH_TYPE
+    DATABRICKS_CLIENT_ID: $TEAM_CLIENT_ID
+    DATABRICKS_CLIENT_SECRET: $TEAM_CLIENT_SECRET  # fallback only; empty with OIDC
+
+.as-product-dev:
+  extends: .databricks-login
+  variables:
+    DATABRICKS_AUTH_TYPE: $PRODUCT_DEV_AUTH_TYPE
+    DATABRICKS_CLIENT_ID: $PRODUCT_DEV_CLIENT_ID
+    DATABRICKS_CLIENT_SECRET: $PRODUCT_DEV_CLIENT_SECRET
+
+.as-product-prod:
+  extends: .databricks-login
+  variables:
+    DATABRICKS_AUTH_TYPE: $PRODUCT_PROD_AUTH_TYPE
+    DATABRICKS_CLIENT_ID: $PRODUCT_PROD_CLIENT_ID
+    DATABRICKS_CLIENT_SECRET: $PRODUCT_PROD_CLIENT_SECRET
+
+.static-rules:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+.release-rules:
+  rules:
+    - if: $CI_COMMIT_TAG
+
+# ---- MR and main: static checks ----
+
+lint:
+  extends: [.tooling, .static-rules]
+  stage: test
+  script:
+    - make lint parse
+
+tooling-tests:
+  extends: [.tooling, .static-rules]
+  stage: test
+  script:
+    - make test-tooling
+
+bundle-validate:
+  extends: [.tooling, .static-rules, .as-team]
+  stage: test
+  script:
+    - make bundle-validate TARGET=dev
+
+security-scan:
+  extends: [.tooling, .static-rules]
+  stage: test
+  script:
+    - make security-scan
+
+# ---- MR: full build into <product>__mr__* (ADR 0009) ----
+
+mr-build:
+  extends: [.tooling, .as-team]
+  stage: mr-build
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  # One MR build at a time: they all share the same schemas.
+  resource_group: mr-build
+  script:
+    - make ci-mr-build
+
+# ---- Release: started by a GitLab release (its tag) on a main commit ----
+
+release-check:
+  extends: [.tooling, .release-rules]
+  stage: release
+  variables:
+    GIT_DEPTH: "0"  # the "is the tag on main" check needs history
+  script:
+    - make ci-release-check
+
+release-artifact:
+  extends: [.tooling, .release-rules]
+  stage: release
+  needs: [release-check]
+  script:
+    - make ci-release-artifact
+
+product-dev:
+  extends: [.tooling, .release-rules, .as-product-dev]
+  stage: product-dev
+  needs: [release-artifact]
+  resource_group: product-dev
+  environment:
+    name: product-dev
+    deployment_tier: testing
+  # The product dev job run is the release's test: a failed run fails the pipeline.
+  script:
+    - make ci-release-fetch bundle-deploy bundle-run TARGET=dev
+
+validate-prod:
+  extends: [.tooling, .release-rules, .as-product-prod]
+  stage: prod
+  needs: [product-dev]
+  script:
+    - make ci-release-fetch bundle-validate TARGET=prod BUNDLE_DIR=target/release/bundle
+
+# Manual. Deploys the same archive; starts no run, the prod schedule takes over.
+# Rollback: re-run this job in an earlier release's pipeline (docs/ci-cd.md).
+deploy-prod:
+  extends: [.tooling, .as-product-prod]
+  stage: prod
+  needs: [validate-prod]
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: manual
+  allow_failure: false
+  resource_group: product-prod
+  environment:
+    name: prod
+    deployment_tier: production
+  script:
+    - make ci-release-fetch bundle-deploy TARGET=prod
