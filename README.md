@@ -5,7 +5,7 @@ A GitLab repository template for one **data product**: a dbt project on Databric
 - a **personal environment** for every developer, in the team catalog, so nobody's `dbt build` touches a teammate's or a shared environment;
 - a deployment pattern: MR builds, then GitLab releases that deploy one **release artifact** first to the **product dev catalog** (as the release's test) and, after a manual approval, to the **product prod catalog**.
 
-Terms in bold are defined in [`GLOSSARY.md`](GLOSSARY.md). Decisions and their reasons are in [`docs/adr/`](docs/adr/).
+Terms in bold are defined in [`GLOSSARY.md`](GLOSSARY.md). Decisions and their reasons are in [`docs/adr/`](docs/adr/). Every workflow, step by step with diagrams: [`docs/workflows.md`](docs/workflows.md).
 
 > Status: the development tooling is verified offline and on the local Spark engine; the deployment is verified offline only (see [`docs/ci-cd.md`](docs/ci-cd.md), "Not verified yet"). Expect to fix small things on the first real run.
 
