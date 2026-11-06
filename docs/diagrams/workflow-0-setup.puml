@@ -1,0 +1,58 @@
+@startuml workflow-0-setup
+title 0. Set up your environment and run dbt
+
+|Developer (dev container)|
+start
+:Clone the repository and open it in VS Code;
+:**Reopen in Container**;
+note right
+  Dev container with pinned uv,
+  Databricks CLI, Python
+  (.devcontainer/)
+end note
+:""databricks auth login ~--host <dev-workspace-host>"";
+note right
+  Your CLI login (U2M OAuth),
+  cached in the container
+end note
+:""make setup"";
+note right
+  * ""uv sync ~--locked"": .venv with dbt, sqlfluff, ...
+  * alias suggested from your name, e.g. **jodo**
+  * ./profiles.yml (gitignored):
+    catalog = team catalog,
+    schema = sample_product~__jodo
+  * dbt_packages/ (""dbt deps"")
+end note
+:""make clone-sources"";
+|Databricks (dev workspace)|
+:Shallow clone of every source table;
+note right
+  sample_product~__jodo~__src_clone
+  .tpch~__orders, .tpch~__customer, ...
+  (no data copied)
+end note
+|Developer (dev container)|
+:""uv run dbt build"";
+note right
+  First run: browser OAuth login for dbt
+end note
+|Databricks (dev workspace)|
+:Models built and tested on the team SQL warehouse;
+note right
+  sample_product~__jodo~__staging
+  sample_product~__jodo~__intermediate
+  sample_product~__jodo~__v1, ...~__v2
+  target/ (manifest, run_results) locally
+end note
+|Developer (dev container)|
+if (Start over?) then (yes)
+  :""make clean-dev"";
+  note right
+    Lists sample_product~__jodo*,
+    drops them after you type "yes"
+  end note
+else (no)
+endif
+stop
+@enduml

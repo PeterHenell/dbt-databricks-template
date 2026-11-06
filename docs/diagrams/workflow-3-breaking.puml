@@ -1,0 +1,47 @@
+@startuml workflow-3-breaking
+title 3. Make a breaking change to the published interface (v2 -> v3)
+
+|Developer (dev container)|
+start
+:Branch from main (as in workflow 1);
+partition "For **every** model in models/published/" {
+  :Copy ""<model>_v2.sql"" to ""<model>_v3.sql""
+  and make the change in v3;
+  :In ""_published.yml"": add ""- v: 3"" (columns include/exclude),
+  set ""latest_version: 3"";
+  :Give ""- v: 2"" a ""deprecation_date""
+  that leaves consumers time to move;
+}
+note right
+  An unversioned published model fails the run
+  (assert_published_models_are_versioned)
+end note
+:""uv run dbt build ~--select published"";
+|Databricks (dev workspace)|
+:Both versions built and tested;
+note right
+  sample_product~__jodo~__v2.customers  (old contract)
+  sample_product~__jodo~__v3.customers  (new contract)
+  ref('customers') now means v3;
+  pin old with ref('customers', v=2)
+end note
+|Developer (dev container)|
+:Update refs that must stay on v2;
+:""make lint parse"", push, open MR;
+|GitLab CI|
+:MR build: full build incl. ~__v2 and ~__v3;
+|Developer (dev container)|
+:Merge; tell consumers about v3
+and the v2 deprecation date;
+:Release (workflow 2);
+|Databricks (prod workspace)|
+:Scheduled run builds v2 and v3;
+note right
+  Product prod catalog: schemas v2 and v3
+  (v2 until it is retired)
+end note
+:Consumers move from v2 to v3;
+|Developer (dev container)|
+:After the deprecation date: retire v2 (workflow 9);
+stop
+@enduml

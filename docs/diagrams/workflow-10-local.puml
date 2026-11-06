@@ -1,0 +1,37 @@
+@startuml workflow-10-local
+title 10. Try a change on the local engine
+
+|Developer (host shell)|
+start
+:""make local-sources"";
+|Local containers|
+:Build the dbt image, start Postgres (Hive metastore);
+:Run local/tpch.sql;
+note right
+  Small stand-in tpch tables
+  in a local Spark warehouse
+end note
+|Developer (host shell)|
+:""make local-dbt ARGS="run-operation clone_sources""" (optional);
+note right
+  sample_product~__local~__src_clone.*
+  (LOCAL_ALIAS=... to change "local")
+end note
+repeat
+  :Edit models;
+  :""make local-dbt""  (or ""ARGS="build ~--select customers""");
+  |Local containers|
+  :dbt build with dbt-spark;
+  note right
+    sample_product~__local~__staging,
+    ~__intermediate, ~__v1, ~__v2
+  end note
+  |Developer (host shell)|
+repeat while (Looks right?) is (no)
+->yes;
+:Inspect: ""make local-sql"";
+:""make local-down"" (keeps data)
+or ""make local-clean"" (deletes it);
+:Continue on Databricks: workflow 1;
+stop
+@enduml

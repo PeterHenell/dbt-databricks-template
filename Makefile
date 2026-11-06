@@ -77,6 +77,18 @@ local-down: ## Local engine: stop the containers (keeps the data)
 local-clean: ## Local engine: stop and delete all local tables and the catalog
 	$(COMPOSE) down -v
 
+# ---- Docs: PlantUML diagrams (docs/diagrams/*.puml -> *.svg, both committed) ----
+# GitHub and many GitLab instances don't render PlantUML in Markdown, so the docs embed
+# the SVGs. Re-run after editing a .puml file. Needs Podman or Docker (run on the host).
+CONTAINER      ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
+PLANTUML_IMAGE ?= docker.io/plantuml/plantuml:1.2025.4
+CONTAINER_USER  = $(if $(findstring podman,$(CONTAINER)),--userns=keep-id,--user $(shell id -u):$(shell id -g))
+
+.PHONY: diagrams
+diagrams: ## Render docs/diagrams/*.puml to SVG (Podman or Docker, on the host)
+	$(CONTAINER) run --rm $(CONTAINER_USER) -e JAVA_TOOL_OPTIONS=-Duser.home=/tmp -v "$(CURDIR)/docs/diagrams:/data:Z" \
+		$(PLANTUML_IMAGE) -tsvg -charset UTF-8 "/data/*.puml"
+
 .PHONY: test-tooling
 test-tooling: ## Run the unit tests for the developer tooling in scripts/
 	$(UV) run pytest

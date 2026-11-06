@@ -1,0 +1,36 @@
+@startuml workflow-11-new-product
+title 11. Create a new data product from the template
+
+|Product team|
+start
+:Ask the platform team for: team catalog (if new),
+product dev + prod catalogs, SQL warehouses,
+3 service principals, OIDC policy (team identity),
+OAuth secrets (product identities);
+:GitLab: **New project from template**;
+:Rename ""sample_product"" in dbt_project.yml (name, profile, models:),
+deploy/profiles.yml, databricks.yml, local/profiles.yml;
+:Fill in config/dev-environment.toml
+and the <placeholders> in databricks.yml;
+:Replace the sample tpch source and models;
+:""make test-tooling lint parse"";
+note right
+  Fails if the names don't match
+  or the bundle doesn't validate
+end note
+|GitLab settings|
+:CI/CD variables: DATABRICKS_OIDC_AUDIENCE, TEAM_CLIENT_ID,
+PRODUCT_DEV_CLIENT_ID/_SECRET, PRODUCT_PROD_CLIENT_ID/_SECRET
+(product ones masked + protected);
+:Protected tags ""v*"", protected environment ""prod""
+with approvals (Premium/Ultimate),
+allow job retries for rollback deployments;
+|Product team|
+:Each developer: workflow 0;
+:First MR (workflow 1), first release (workflow 2);
+note right
+  After the first green product dev run,
+  ""make build-changed"" works
+end note
+stop
+@enduml

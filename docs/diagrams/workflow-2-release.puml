@@ -1,0 +1,68 @@
+@startuml workflow-2-release
+title 2. Release and deploy
+
+|Release manager|
+start
+:GitLab: Deploy > Releases > **New release**
+tag ""v1.4.0"" on a main commit;
+|GitLab CI|
+:release-check  (""make ci-release-check"");
+note right
+  Tag is a valid package version,
+  its commit is on main
+end note
+:release-artifact  (""make ci-release-artifact"");
+note right
+  ""dbt deps"", then the archive
+  **sample_product-v1.4.0.tar.gz**
+  (databricks.yml, resources/, deploy/, models/,
+  macros/, dbt_packages/, RELEASE.json)
+  stored once in the package registry
+end note
+:product-dev  (""make ci-release-fetch bundle-deploy bundle-run TARGET=dev"")
+as the product dev identity;
+|Databricks (dev workspace)|
+:""bundle deploy -t dev"";
+note right
+  Job "dbt_build" (no schedule),
+  schema _dbt_artifacts, volume state
+  in the product dev catalog
+end note
+:Job run: task dbt_build (""dbt build ~--target prod"");
+note right
+  staging, intermediate, v1, v2
+  in the product dev catalog
+end note
+:Job run: task publish_dbt_artifacts;
+note right
+  /Volumes/<product_dev_catalog>/_dbt_artifacts/state/
+    runs/<run_id>/manifest.json, run_results.json
+    latest/  (what ""make build-changed"" uses)
+end note
+|GitLab CI|
+if (Product dev run green?) then (no)
+  :Pipeline fails, release stops;
+  note right: See workflow 7
+  stop
+else (yes)
+endif
+:validate-prod  (""make bundle-validate TARGET=prod"")
+same archive, product prod identity;
+|Release manager|
+:Approve (Premium/Ultimate) and start **deploy-prod**;
+|GitLab CI|
+:deploy-prod  (""make ci-release-fetch bundle-deploy TARGET=prod"");
+|Databricks (prod workspace)|
+:""bundle deploy -t prod"";
+note right
+  Job "dbt_build" with the cron schedule,
+  updated to v1.4.0. **No run started.**
+  GitLab environment "prod" shows v1.4.0
+end note
+:Next scheduled run builds v1.4.0;
+note right
+  Data in the product prod catalog,
+  artifacts in its _dbt_artifacts.state volume
+end note
+stop
+@enduml

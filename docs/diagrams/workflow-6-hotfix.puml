@@ -1,0 +1,46 @@
+@startuml workflow-6-hotfix
+title 6. Release a fix that is not on main (hotfix, exceptional)
+
+|Developer (dev container)|
+start
+if (Can main be released as it is?) then (yes, the default)
+  :Fix on a feature branch, MR, merge (workflow 1);
+  :Release from main, e.g. ""v1.5.1"" (workflow 2);
+  stop
+else (no, main holds unreleasable work)
+endif
+:""git switch -c hotfix/v1.5.1 v1.5.0"";
+:Fix; ""uv run dbt build ~--select <changed>+""
+in your personal environment;
+:""git push"" the hotfix branch;
+note right
+  Optional: open an MR from the hotfix branch
+  for review and an MR build
+end note
+|Maintainer|
+:Decide to bypass the "tag is on main" rule
+(e.g. temporarily change ""ci-release-check"");
+note right
+  Deliberate and visible in the history.
+  Without it, release-check refuses the tag.
+end note
+:Create release ""v1.5.1"" on the hotfix branch commit;
+|GitLab CI|
+:release-artifact > product-dev (deploy + run)
+> validate-prod > manual deploy-prod;
+note right
+  sample_product-v1.5.1.tar.gz built from
+  the hotfix branch; tested in product dev
+end note
+|Databricks (prod workspace)|
+:Prod job updated to v1.5.1;
+|Maintainer|
+:Undo the ""ci-release-check"" bypass;
+|Developer (dev container)|
+:Cherry-pick the fix into main via an MR;
+note right
+  Otherwise the next release from main
+  brings the bug back
+end note
+stop
+@enduml

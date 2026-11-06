@@ -1,0 +1,43 @@
+@startuml workflow-4-clones
+title 4. Create and refresh source clones
+
+|Developer (dev container)|
+start
+if (Why?) then (first time, new source,\nstale data, or\n"file not found" after prod VACUUM)
+  :""make clone-sources"";
+  |Databricks (dev workspace)|
+  :Create schema sample_product~__jodo~__src_clone (if missing);
+  :For each declared source;
+  if (Source is a table?) then (yes)
+    :""CREATE OR REPLACE TABLE ... SHALLOW CLONE <prod table>"";
+    note right
+      sample_product~__jodo~__src_clone.tpch~__orders, ...
+      Points at prod's current files, copies nothing
+    end note
+  else (view)
+    :""CREATE OR REPLACE VIEW ... AS SELECT * FROM <prod view>"";
+    note right: Always reads prod
+  endif
+  |Developer (dev container)|
+  :Output: "Shallow-cloned N source table(s) ..."
+  (fails if a source table doesn't exist in prod);
+  :""uv run dbt build"";
+  note right
+    Default mode **clone**: staging models read
+    sample_product~__jodo~__src_clone.*
+  end note
+else (one run against\ncurrent prod data)
+  :""uv run dbt build ~--vars '{dev_source_mode: prod}'"";
+  note right
+    Reads prod sources directly;
+    nothing is cloned
+  end note
+endif
+|Databricks (dev workspace)|
+:Models rebuilt in sample_product~__jodo~__<layer>;
+note right
+  ""dev_source_mode: sample"" is reserved:
+  how samples are made is not decided yet
+end note
+stop
+@enduml

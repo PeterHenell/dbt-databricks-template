@@ -1,0 +1,26 @@
+@startuml workflow-9-retire
+title 9. Retire an old published version (v1)
+
+|Developer (dev container)|
+start
+:""uv run dbt parse"" warns:
+"has passed its deprecation date";
+:Check that no consumer still reads v1
+(e.g. Unity Catalog lineage / query history);
+partition "For **every** model in models/published/" {
+  :Delete ""<model>_v1.sql"";
+  :Remove ""- v: 1"" from ""_published.yml"";
+}
+:Replace any ""ref('<model>', v=1)"";
+:""uv run dbt build ~--select published"";
+:MR (workflow 1), then release (workflow 2);
+|Databricks (prod workspace)|
+:Scheduled run no longer builds v1;
+note right
+  Schema v1 still exists with its last data
+end note
+|Data platform / owner|
+:Drop schema v1 by hand in product dev and prod
+once consumers are off it;
+stop
+@enduml

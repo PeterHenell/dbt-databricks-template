@@ -1,0 +1,45 @@
+@startuml workflow-5-rollback
+title 5. Roll back a broken release (v1.5.0 -> v1.4.0)
+
+|Release manager|
+start
+:Notice: v1.5.0 broke prod;
+:GitLab: Operate > Environments > **prod**
+(or the v1.4.0 release's pipeline);
+:Re-run **deploy-prod** of ""v1.4.0"";
+note right
+  Needs "Allow job retries for
+  rollback deployments" enabled
+end note
+|GitLab CI|
+:deploy-prod  (""make ci-release-fetch bundle-deploy TARGET=prod"");
+note right
+  Downloads the stored
+  sample_product-v1.4.0.tar.gz
+  (not rebuilt from today's code)
+end note
+|Databricks (prod workspace)|
+:""bundle deploy -t prod"";
+note right
+  Job definition and code back to v1.4.0.
+  GitLab environment "prod" shows v1.4.0.
+  **Data still as v1.5.0 wrote it.**
+end note
+if (Can the data wait for the next scheduled run?) then (yes)
+  :Next scheduled run rebuilds with v1.4.0;
+else (no)
+  |Release manager|
+  :Start the prod job "dbt_build" by hand
+  (Databricks UI: Jobs > Run now);
+  |Databricks (prod workspace)|
+  :Run rebuilds the data with v1.4.0;
+endif
+:Data back to v1.4.0's logic;
+note right
+  New _dbt_artifacts.state/runs/<run_id>/ and latest/
+end note
+|Developer (dev container)|
+:Fix forward: branch, fix, MR (workflow 1);
+:New release ""v1.5.1"" (workflow 2);
+stop
+@enduml

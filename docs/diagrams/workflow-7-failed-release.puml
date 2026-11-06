@@ -1,0 +1,34 @@
+@startuml workflow-7-failed-release
+title 7. A release fails in product dev
+
+|GitLab CI|
+start
+:product-dev job fails (v1.6.0);
+|Databricks (dev workspace)|
+note right
+  Product dev catalog: partly built by v1.6.0.
+  _dbt_artifacts.state/latest/ still from the
+  last successful run (publish task didn't run)
+end note
+|Developer (dev container)|
+:Read the failing dbt output
+(GitLab job log, or the Databricks job run);
+if (Transient? e.g. warehouse or network) then (yes)
+  :Retry the product-dev job;
+  note right
+    Same stored archive, deployed and run again
+  end note
+  stop
+else (no, a real bug)
+endif
+:Reproduce: ""uv run dbt build ~--select <failing model>+""
+(maybe with ""~--vars '{dev_source_mode: prod}'"");
+:Fix on a branch, MR, merge (workflow 1);
+|Release manager|
+:New release ""v1.6.1"" (workflow 2);
+note right
+  v1.6.0 is never deployed to prod.
+  Its package stays in the registry.
+end note
+stop
+@enduml
