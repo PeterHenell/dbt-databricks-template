@@ -11,11 +11,12 @@ How this data product is deployed to Databricks and what the GitLab pipelines do
 | `databricks.yml` | The Databricks Asset Bundle. Targets `dev` (product dev catalog, dev workspace, no schedule) and `prod` (product prod catalog, prod workspace, cron schedule). The **only** place with environment-specific values (ADR 0008). |
 | `resources/dbt_job.yml` | The one job: task `dbt_build`, then task `publish_dbt_artifacts`. Also the `_dbt_artifacts` schema and `state` volume. |
 | `deploy/profiles.yml` | The deployment profile (ADR 0002). Target `prod` (the job) and target `mr` (MR builds). It holds no host, catalog, warehouse or secret: `DBT_HOST` and `DBT_ACCESS_TOKEN` come from the environment, catalog and warehouse from `--vars`. |
-| `scripts/release.py` | Builds the release artifact, checks the release tag, stores and fetches the artifact in GitLab's package registry. |
-| `scripts/mr_build.py` | The MR build. |
-| `scripts/publish_dbt_artifacts.py` | Runs inside the job and publishes the dbt artifacts. |
-| `scripts/install_ci_tools.sh` | Installs uv and the Databricks CLI in CI, at the versions pinned in `.devcontainer/Dockerfile`. |
-| `.gitlab-ci.yml` | The pipelines. Every job only calls `make` targets. |
+| `dbtp release` (`tools/dbtp/src/dbtp/release.py`) | Builds the release artifact, checks the release tag, stores and fetches the artifact in GitLab's package registry. |
+| `dbtp mr-build` (`tools/dbtp/src/dbtp/mr_build.py`) | The MR build. |
+| `dbtp bundle` (`tools/dbtp/src/dbtp/bundle.py`) | Validates, deploys and runs the bundle; deploys only from the unpacked artifact. |
+| `tools/dbtp/src/dbtp/jobs/publish_dbt_artifacts.py` | Runs inside the job and publishes the dbt artifacts. Shipped in the artifact; needs only the Databricks SDK. |
+| `tools/dbtp/src/dbtp/ci_tools.py` | Installs uv and the Databricks CLI in CI, at the versions pinned in `.devcontainer/Dockerfile` (standard library only, runs before uv exists). |
+| `.gitlab-ci.yml` | The pipelines. Every job only calls `make` targets, which forward to `dbtp`. |
 
 ## The job
 
@@ -72,7 +73,7 @@ Releases do this through the pipeline. Only do it by hand when the pipeline itse
 
 ### MR build (ADR 0009)
 
-`make ci-mr-build` runs `scripts/mr_build.py`:
+`make ci-mr-build` runs `dbtp mr-build`:
 
 1. It takes the team's dev workspace, team catalog and warehouse from `config/dev-environment.toml`.
 2. It gets an OAuth token for the CI login and hands it to dbt as `DBT_ACCESS_TOKEN`.
@@ -92,7 +93,7 @@ Sources are read from prod, as on every non-personal target. All MR builds share
 5. **`validate-prod`** validates the same archive against `-t prod`, as the product prod identity.
 6. **`deploy-prod`** (manual, environment `prod`, `resource_group: product-prod`) runs `bundle deploy -t prod` from the same archive. It does **not** start a run: the prod schedule takes over.
 
-**Release tag names** must be valid GitLab generic package versions. GitLab checks them with `\A(\.?[\w+-]+\.?)+\z`: letters, digits, `_`, `+` and `-`, in parts joined by dots, with no `/` and no spaces. Use `vMAJOR.MINOR.PATCH` (e.g. `v1.4.0`). `release-check` enforces the rule (`scripts/release.py`, `tag_problem`).
+**Release tag names** must be valid GitLab generic package versions. GitLab checks them with `\A(\.?[\w+-]+\.?)+\z`: letters, digits, `_`, `+` and `-`, in parts joined by dots, with no `/` and no spaces. Use `vMAJOR.MINOR.PATCH` (e.g. `v1.4.0`). `release-check` enforces the rule (`dbtp.release.tag_problem`).
 
 Changing a release needs a new tag. Re-running the pipeline of an existing tag deploys the stored archive, even if you changed the code since.
 

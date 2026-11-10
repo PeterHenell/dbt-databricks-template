@@ -32,7 +32,7 @@ note right
   sqlfluff + yamllint;
   offline ""dbt parse"" with deploy/profiles.yml
 end note
-:""make test-tooling""  (if you changed scripts/, macros, bundle or CI);
+:""make test-tooling""  (if you changed tools/dbtp/, macros, bundle or CI);
 :""git commit"" / ""git push -u origin feature/<name>""
 Open a merge request;
 |GitLab CI|

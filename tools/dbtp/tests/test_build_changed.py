@@ -1,12 +1,12 @@
-"""`make build-changed` download step, against a fake `databricks` CLI on PATH."""
+"""`dbtp build-changed` download step, against a fake `databricks` CLI on PATH."""
 
 import os
 import stat
 
 import pytest
 
-import build_changed
-from devenv import SetupError
+from dbtp import build_changed
+from dbtp.devenv import SetupError
 
 HOST = "https://adb-1.2.azuredatabricks.net"
 

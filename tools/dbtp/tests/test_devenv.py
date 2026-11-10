@@ -1,7 +1,8 @@
+"""dbtp.devenv (project discovery, settings, profile) and setup's alias choice."""
+
 import pytest
 
-import devenv
-import setup_dev
+from dbtp import devenv, setup_dev
 
 CONFIG = devenv.DevConfig(
     host="https://adb-123.4.azuredatabricks.net",
@@ -102,5 +103,42 @@ def test_placeholders_are_rejected(tmp_path):
         devenv.read_dev_config(path)
 
 
-def test_project_name_matches_profile():
-    assert devenv.read_product() == "sample_product"
+def make_project(root, name="orders", profile="orders"):
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "dbt_project.yml").write_text(f"name: {name}\nprofile: {profile}\n")
+    return root
+
+
+def test_project_is_found_from_a_subdirectory(tmp_path, monkeypatch):
+    monkeypatch.delenv(devenv.PROJECT_DIR_ENV, raising=False)
+    root = make_project(tmp_path / "repo")
+    (root / "models" / "staging").mkdir(parents=True)
+    project = devenv.Project.find(root / "models" / "staging")
+    assert project.root == root.resolve()
+    assert project.product() == "orders"
+    assert project.dev_config == root.resolve() / "config" / "dev-environment.toml"
+
+
+def test_project_dir_env_wins(tmp_path, monkeypatch):
+    root = make_project(tmp_path / "repo")
+    monkeypatch.setenv(devenv.PROJECT_DIR_ENV, str(root))
+    assert devenv.Project.find(tmp_path).root == root.resolve()
+
+
+def test_no_project_is_a_setup_error(tmp_path, monkeypatch):
+    monkeypatch.delenv(devenv.PROJECT_DIR_ENV, raising=False)
+    with pytest.raises(devenv.SetupError, match="No dbt_project.yml"):
+        devenv.Project.find(tmp_path)
+    with pytest.raises(devenv.SetupError, match="not a data product repository"):
+        devenv.Project.at(tmp_path)
+
+
+def test_product_name_must_match_profile(tmp_path):
+    root = make_project(tmp_path, name="orders", profile="other")
+    with pytest.raises(devenv.SetupError, match="must both be"):
+        devenv.Project(root).product()
+
+
+def test_missing_dev_config_is_a_setup_error(tmp_path):
+    with pytest.raises(devenv.SetupError, match="is missing"):
+        devenv.read_dev_config(tmp_path / "dev-environment.toml")

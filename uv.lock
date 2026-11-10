@@ -7,6 +7,12 @@ resolution-markers = [
     "sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
+[manifest]
+members = [
+    "dbt-data-product",
+    "dbtp",
+]
+
 [[package]]
 name = "agate"
 version = "1.9.1"
@@ -349,6 +355,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "dbt-core" },
     { name = "dbt-databricks" },
+    { name = "dbtp" },
     { name = "pyyaml" },
 ]
 
@@ -363,6 +370,7 @@ dev = [
 requires-dist = [
     { name = "dbt-core", specifier = "~=1.12.0" },
     { name = "dbt-databricks", specifier = "~=1.12.0" },
+    { name = "dbtp", editable = "tools/dbtp" },
     { name = "pyyaml", specifier = ">=6.0.3" },
 ]
 
@@ -442,6 +450,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8b/9b/04974aa3c50f97dc5898f05de4c92654b04c15930394c7af2a6a3284f301/dbt_spark-1.10.3.tar.gz", hash = "sha256:3dcafb80c12bdf54da091b6e81a40c51c364a304928de418b86f48fa35fe4da4", size = 78167, upload-time = "2026-06-24T09:57:34.249Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e5/ca/871022f6b4ccdefb0ee89e69c90bb4340b54bf119a930099a0f8b690c548/dbt_spark-1.10.3-py3-none-any.whl", hash = "sha256:1906f4cb507c931c4988ea6074603769da7466788b53483546e3abf6eabbf04d", size = 51487, upload-time = "2026-06-24T09:57:32.983Z" },
+]
+
+[[package]]
+name = "dbtp"
+version = "0.1.0"
+source = { editable = "tools/dbtp" }
+dependencies = [
+    { name = "databricks-sdk" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "databricks-sdk", specifier = ">=0.50" },
+    { name = "pyyaml", specifier = ">=6.0" },
 ]
 
 [[package]]

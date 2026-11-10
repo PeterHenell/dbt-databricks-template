@@ -13,7 +13,7 @@ bundle:
 include:
   - resources/*.yml
 
-# Deploy from the unpacked release artifact (`make artifact`, scripts/release.py), not
+# Deploy from the unpacked release artifact (`make artifact`, `dbtp release build`), not
 # from the repository: it holds only what the job needs. Installed dbt packages are
 # part of it (ADR 0008) and the job never runs `dbt deps`, but git ignores them, so
 # include them explicitly. (Without packages the CLI warns that the pattern matches

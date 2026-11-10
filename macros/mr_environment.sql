@@ -5,7 +5,7 @@
   another branch can't hide a missing model.
 
   dbt run-operation drop_mr_environment --args '{dry_run: false}' --profiles-dir deploy --target mr
-  (scripts/mr_build.py runs it). `schemas` replaces the catalog listing; it exists for tests.
+  (`dbtp mr-build` runs it). `schemas` replaces the catalog listing; it exists for tests.
 #}
 {% macro mr_environment_schema() %}
     {%- set environment = project_name | lower ~ '__mr' -%}

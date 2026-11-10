@@ -1,4 +1,4 @@
-"""MR build (ADR 0009): drop `<product>__mr__*`, then a full `dbt build` into it.
+"""`dbtp mr-build` (`make ci-mr-build`), the MR build (ADR 0009): drop `<product>__mr__*`, then a full `dbt build` into it.
 
 Runs in the MR pipeline as the team identity, in the team catalog of the dev
 workspace (`config/dev-environment.toml`), with target `mr` of deploy/profiles.yml.
@@ -15,12 +15,9 @@ from __future__ import annotations
 
 import json
 import os
-import shlex
-import subprocess
-import sys
 
-import devenv
-from devenv import SetupError
+from dbtp import devenv
+from dbtp.devenv import Project, SetupError
 
 
 def access_token(host: str, config_factory=None) -> str:
@@ -50,23 +47,14 @@ def commands(config: devenv.DevConfig, extra: list[str]) -> list[list[str]]:
     ]
 
 
-def main(argv: list[str] | None = None, config_factory=None, run=subprocess.call) -> int:
-    extra = sys.argv[1:] if argv is None else argv
-    try:
-        config = devenv.read_dev_config()
-        env = {
-            **os.environ,
-            "DBT_HOST": config.hostname,
-            "DBT_ACCESS_TOKEN": access_token(config.host, config_factory),
-        }
-    except SetupError as error:
-        devenv.fail(str(error))
+def main(project: Project, extra: list[str], config_factory=None, run=devenv.run) -> int:
+    config = devenv.read_dev_config(project.dev_config)
+    env = {
+        **os.environ,
+        "DBT_HOST": config.hostname,
+        "DBT_ACCESS_TOKEN": access_token(config.host, config_factory),
+    }
     for command in commands(config, extra):
-        print("+ " + shlex.join(command), flush=True)
-        if (code := run(command, cwd=devenv.REPO_ROOT, env=env)) != 0:
+        if (code := run(command, project, env=env)) != 0:
             return code
     return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

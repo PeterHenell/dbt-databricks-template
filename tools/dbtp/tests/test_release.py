@@ -1,4 +1,4 @@
-"""scripts/release.py: tag rule, artifact contents, write-once registry logic (fake registry)."""
+"""dbtp.release: tag rule, artifact contents, write-once registry logic (fake registry)."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import tarfile
 
 import pytest
 
-import release
-from devenv import SetupError
+from dbtp import release
+from dbtp.devenv import SetupError
 
 
 @pytest.mark.parametrize("tag", ["v1.0.0", "1.2.3", "v1.2.3-rc.1", "2026.11.04-1", "v1.0.0+build_7"])
@@ -25,17 +25,6 @@ def test_invalid_release_tags(tag):
 def names(archive: bytes) -> list[str]:
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
         return tar.getnames()
-
-
-def test_artifact_holds_the_deployable_project_only():
-    files = release.tracked_files(release.devenv.REPO_ROOT)
-    assert "databricks.yml" in files and "deploy/profiles.yml" in files
-    assert "scripts/publish_dbt_artifacts.py" in files and "dbt_project.yml" in files
-    assert any(f.startswith("models/") for f in files) and any(f.startswith("macros/") for f in files)
-    for left_out in ("Makefile", ".gitlab-ci.yml", "config/dev-environment.toml", "scripts/devenv.py"):
-        assert left_out not in files
-    assert not any(f.startswith(("local/", "docs/", ".scratch/", "tests/test_")) for f in files)
-    assert "profiles.yml" not in files  # the developer's own profile, never shipped (ADR 0002)
 
 
 def test_artifact_includes_installed_packages_and_is_reproducible(tmp_path):

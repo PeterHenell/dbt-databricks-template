@@ -127,3 +127,10 @@ A platform change reaches many products without their MRs, so the platform repo'
 - Does git access to the platform repo work everywhere it's needed? Developers' `dbt deps` uses their git credentials; CI needs `CI_JOB_TOKEN` allowlisting on the platform project.
 - How much of `platform.toml` is validated centrally, and which fields does it need (product name, team, catalogs, warehouse, schedule, notification targets)?
 - Should a product repo be able to override platform behaviour at all (e.g. extra CI jobs, a custom schedule)? Proposal: only through `platform.toml` and the component's documented inputs.
+
+## Comments
+
+**2026-11-10, first step agreed with the user (in-repo only):** proposed ticket 3 ("Move `scripts/` into the `dbtp` CLI; thin Makefile") is done inside this repository, without deciding anything else here. The tooling is now the `dbtp` Python package in `tools/dbtp/` (own `pyproject.toml` and version, `dbtp` entry point), a uv workspace member that the root `pyproject.toml` depends on. Every Makefile recipe forwards to `dbtp`. The `clean-dev` confirmation, the local engine's compose orchestration, the offline `parse` and the bundle deploy guard moved from the Makefile into Python. dbtp imports nothing from the product repo and finds it at run time (`dbt_project.yml` upwards from cwd, or `--project-dir` / `$DBTP_PROJECT_DIR`), so it can move to its own repository by changing one `[tool.uv.sources]` entry. `.gitlab-ci.yml` is unchanged (it still calls `make`).
+
+Not done: `dbtp doctor`, the platform repo itself, the macros package, the image, the CI component. All open questions above are still open. Two things this step settled that the later tickets should keep: the job's `publish_dbt_artifacts.py` stays a standalone file (Databricks SDK only) shipped in the artifact, and `ci_tools.py` stays standard-library Python, because both run where dbtp isn't installed.
+

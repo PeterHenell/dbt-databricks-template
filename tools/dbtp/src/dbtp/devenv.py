@@ -1,12 +1,18 @@
-"""Shared helpers for the personal development environment tooling.
+"""The data product repository dbtp works on, and its settings.
 
-Reads the project's settings (data product name, team-level dev settings) and the
-developer's generated `profiles.yml`. Used by `scripts/setup_dev.py` and the Makefile.
+dbtp is installed into a product repository's environment and finds the repository
+from the working directory: the nearest directory upwards that has `dbt_project.yml`,
+or `$DBTP_PROJECT_DIR` when set. Everything here reads that repository's files: the
+data product name (`dbt_project.yml`), the team's dev settings
+(`config/dev-environment.toml`) and the developer's generated `profiles.yml`.
 """
 
 from __future__ import annotations
 
+import os
 import re
+import shlex
+import subprocess
 import sys
 import tomllib
 import unicodedata
@@ -15,10 +21,7 @@ from pathlib import Path
 
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-DBT_PROJECT = REPO_ROOT / "dbt_project.yml"
-DEV_CONFIG = REPO_ROOT / "config" / "dev-environment.toml"
-DEV_PROFILE = REPO_ROOT / "profiles.yml"
+PROJECT_DIR_ENV = "DBTP_PROJECT_DIR"
 
 # Lowercase ASCII words joined by single underscores: never `__`, which separates
 # product, alias and layer in schema names (ADR 0001).
@@ -36,6 +39,54 @@ _EXTRA_ASCII = str.maketrans(
 
 class SetupError(Exception):
     """A problem the developer has to fix; printed without a traceback."""
+
+
+@dataclass(frozen=True)
+class Project:
+    """A data product repository: the dbt project plus the files dbtp reads in it."""
+
+    root: Path
+
+    @classmethod
+    def at(cls, root: Path) -> "Project":
+        root = Path(root).resolve()
+        if not (root / "dbt_project.yml").is_file():
+            raise SetupError(f"{root} has no dbt_project.yml: not a data product repository.")
+        return cls(root)
+
+    @classmethod
+    def find(cls, start: Path | None = None) -> "Project":
+        """`$DBTP_PROJECT_DIR`, else the nearest directory from `start` (cwd) up with dbt_project.yml."""
+        if configured := os.environ.get(PROJECT_DIR_ENV):
+            return cls.at(Path(configured))
+        here = (start or Path.cwd()).resolve()
+        for candidate in (here, *here.parents):
+            if (candidate / "dbt_project.yml").is_file():
+                return cls(candidate)
+        raise SetupError(
+            f"No dbt_project.yml in {here} or any parent directory. Run dbtp inside a data "
+            f"product repository, or set {PROJECT_DIR_ENV}."
+        )
+
+    @property
+    def dbt_project(self) -> Path:
+        return self.root / "dbt_project.yml"
+
+    @property
+    def dev_config(self) -> Path:
+        return self.root / "config" / "dev-environment.toml"
+
+    @property
+    def dev_profile(self) -> Path:
+        """The developer's own profile, written by `dbtp setup` (gitignored, ADR 0002)."""
+        return self.root / "profiles.yml"
+
+    @property
+    def target_dir(self) -> Path:
+        return self.root / "target"
+
+    def product(self) -> str:
+        return read_product(self.dbt_project)
 
 
 def to_ascii_letters(text: str) -> str:
@@ -72,9 +123,9 @@ def validate_alias(alias: str) -> str | None:
     return None
 
 
-def read_product() -> str:
+def read_product(path: Path) -> str:
     """The data product name: the dbt project name (must equal the profile name)."""
-    project = yaml.safe_load(DBT_PROJECT.read_text())
+    project = yaml.safe_load(path.read_text()) or {}
     name, profile = project.get("name"), project.get("profile")
     if name != profile:
         raise SetupError(
@@ -104,8 +155,14 @@ class DevConfig:
         return f"/sql/1.0/warehouses/{self.warehouse_id}"
 
 
-def read_dev_config(path: Path = DEV_CONFIG) -> DevConfig:
-    data = tomllib.loads(path.read_text())
+def _read_toml(path: Path) -> dict:
+    if not path.is_file():
+        raise SetupError(f"{path} is missing: it holds the team's dev workspace settings.")
+    return tomllib.loads(path.read_text())
+
+
+def read_dev_config(path: Path) -> DevConfig:
+    data = _read_toml(path)
     try:
         config = DevConfig(
             host=data["databricks"]["host"].rstrip("/"),
@@ -125,8 +182,8 @@ def read_dev_config(path: Path = DEV_CONFIG) -> DevConfig:
     return config
 
 
-def read_product_dev_catalog(path: Path = DEV_CONFIG) -> str:
-    catalog = tomllib.loads(path.read_text()).get("catalogs", {}).get("product_dev", "")
+def read_product_dev_catalog(path: Path) -> str:
+    catalog = _read_toml(path).get("catalogs", {}).get("product_dev", "")
     if not catalog or "<" in catalog:
         raise SetupError(f"{path.name}: set [catalogs] product_dev to the product dev catalog.")
     return catalog
@@ -142,7 +199,7 @@ def personal_prefix(product: str, alias: str) -> str:
     return f"{product}__{alias}"
 
 
-def alias_from_profile(product: str, path: Path = DEV_PROFILE) -> str | None:
+def alias_from_profile(product: str, path: Path) -> str | None:
     """The alias in an existing dev profile (`schema: <product>__<alias>`), if any."""
     if not path.exists():
         return None
@@ -175,11 +232,17 @@ def render_profile(product: str, alias: str, config: DevConfig) -> str:
         }
     }
     header = (
-        "# Personal dev profile, generated by `make setup`. Gitignored; not shared (ADR 0002).\n"
+        "# Personal dev profile, generated by `make setup` (dbtp setup). Gitignored; not shared (ADR 0002).\n"
         "# Your developer alias is the part of `schema` after `<product>__`.\n"
         "# To change it, run `make clean-dev` (drops the old schemas), then edit `schema` here.\n"
     )
     return header + yaml.safe_dump(profile, sort_keys=False)
+
+
+def run(command: list[str], project: Project, env: dict[str, str] | None = None) -> int:
+    """Run `command` in the project root, echoing it first; returns the exit code."""
+    print("+ " + shlex.join(command), flush=True)
+    return subprocess.call(command, cwd=project.root, env=env)
 
 
 def fail(message: str) -> None:

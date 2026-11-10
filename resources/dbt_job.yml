@@ -47,7 +47,7 @@ resources:
             - task_key: dbt_build
           environment_key: publish
           spark_python_task:
-            python_file: ../scripts/publish_dbt_artifacts.py
+            python_file: ../tools/dbtp/src/dbtp/jobs/publish_dbt_artifacts.py
             parameters:
               - --job-run-id
               - "{{job.run_id}}"

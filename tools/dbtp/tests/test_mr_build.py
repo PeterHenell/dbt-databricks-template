@@ -1,12 +1,11 @@
-"""scripts/mr_build.py: commands, token hand-over to dbt, failure handling (no Databricks)."""
+"""dbtp.mr_build: commands, token hand-over to dbt, failure handling (no Databricks)."""
 
 from __future__ import annotations
 
 import pytest
 
-import devenv
-import mr_build
-from devenv import SetupError
+from dbtp import devenv, mr_build
+from dbtp.devenv import Project, SetupError
 
 CONFIG = devenv.DevConfig("https://adb-1.2.azuredatabricks.net", "wh1", "team_x")
 
@@ -45,14 +44,14 @@ def test_commands_drop_then_full_build_without_defer():
     assert "--defer" not in build and "--state" not in build
 
 
-def test_main_passes_token_and_stops_at_first_failure(monkeypatch):
-    monkeypatch.setattr(devenv, "read_dev_config", lambda: CONFIG)
+def test_main_passes_token_and_stops_at_first_failure(monkeypatch, tmp_path):
+    monkeypatch.setattr(devenv, "read_dev_config", lambda path: CONFIG)
     calls = []
 
-    def run(command, cwd, env):
+    def run(command, project, env):
         calls.append((command[1], env["DBT_HOST"], env["DBT_ACCESS_TOKEN"]))
         return 1 if command[1] == "run-operation" else 0
 
-    assert mr_build.main([], config_factory=FakeConfig, run=run) == 1
+    assert mr_build.main(Project(tmp_path), [], config_factory=FakeConfig, run=run) == 1
     assert calls == [("deps", "adb-1.2.azuredatabricks.net", "tok-123"),
                      ("run-operation", "adb-1.2.azuredatabricks.net", "tok-123")]

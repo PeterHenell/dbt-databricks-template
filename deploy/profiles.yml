@@ -3,11 +3,11 @@
 #
 # It holds no environment-specific values (ADR 0008). Whoever runs dbt supplies them:
 #   DBT_HOST          workspace host. Set by Databricks in the job's dbt task; set by
-#                     `scripts/ci.py` in CI.
+#                     `dbtp mr-build` in CI.
 #   DBT_ACCESS_TOKEN  OAuth token of the identity that runs dbt. Set by Databricks for
-#                     the job's run-as identity; set by `scripts/ci.py` from the CI login.
+#                     the job's run-as identity; set by `dbtp mr-build` from the CI login.
 #   --vars '{deploy_catalog: ..., deploy_warehouse_id: ...}'  passed by the bundle's job
-#                     (resources/dbt_job.yml) or by the Makefile's CI targets.
+#                     (resources/dbt_job.yml) or by dbtp (`mr-build`, `parse`).
 sample_product:
   target: prod
   outputs:
