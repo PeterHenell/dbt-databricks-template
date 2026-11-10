@@ -22,7 +22,7 @@
     {%- if mode not in ['prod', 'clone', 'sample'] -%}
         {{ exceptions.raise_compiler_error("dev_source_mode must be prod, clone or sample, not '" ~ mode ~ "'.") }}
     {%- endif -%}
-    {{- return(mode if is_personal_target() else 'prod') -}}
+    {{- return(mode if dbt_platform.is_personal_target() else 'prod') -}}
 {% endmacro %}
 
 
@@ -39,7 +39,7 @@
 {#- Overrides dbt's source(): same lineage (builtins.source), location chosen by the mode. -#}
 {% macro source(source_name, table_name) %}
     {%- set prod_relation = builtins.source(source_name, table_name) -%}
-    {%- set mode = dev_source_mode() -%}
+    {%- set mode = dbt_platform.dev_source_mode() -%}
     {%- if mode == 'prod' -%}
         {{- return(prod_relation) -}}
     {%- elif mode == 'sample' -%}
@@ -49,8 +49,8 @@
     {%- endif -%}
     {{- return(prod_relation.incorporate(path={
         'database': target.database,
-        'schema': source_clone_schema(),
-        'identifier': source_clone_identifier(source_name, table_name),
+        'schema': dbt_platform.source_clone_schema(),
+        'identifier': dbt_platform.source_clone_identifier(source_name, table_name),
     })) -}}
 {% endmacro %}
 
@@ -75,11 +75,11 @@
 #}
 {% macro clone_sources() %}
     {%- if execute -%}
-        {%- if not is_personal_target() -%}
+        {%- if not dbt_platform.is_personal_target() -%}
             {{ exceptions.raise_compiler_error("clone_sources only runs in a personal environment, not target '" ~ target.name ~ "'.") }}
         {%- endif -%}
-        {%- do personal_environment_schema() -%}  {#- refuses anything that isn't a personal environment -#}
-        {%- set clone_schema = source_clone_schema() -%}
+        {%- do dbt_platform.personal_environment_schema() -%}  {#- refuses anything that isn't a personal environment -#}
+        {%- set clone_schema = dbt_platform.source_clone_schema() -%}
         {%- do adapter.create_schema(api.Relation.create(database=target.database, schema=clone_schema)) -%}
 
         {%- set cloned, views, missing = [], [], [] -%}
@@ -88,7 +88,7 @@
             {%- set prod = adapter.get_relation(database=node.database, schema=node.schema, identifier=node.identifier) -%}
             {%- set clone = api.Relation.create(
                 database=target.database, schema=clone_schema,
-                identifier=source_clone_identifier(node.source_name, node.name)) -%}
+                identifier=dbt_platform.source_clone_identifier(node.source_name, node.name)) -%}
             {%- set existing = adapter.get_relation(database=clone.database, schema=clone.schema, identifier=clone.identifier) -%}
             {%- if prod is none -%}
                 {%- do missing.append(name ~ ' (' ~ node.relation_name ~ ')') -%}
@@ -98,7 +98,7 @@
                 {%- do views.append(name) -%}
             {%- else -%}
                 {%- if existing is not none and existing.is_view -%}{% do adapter.drop_relation(existing) %}{%- endif -%}
-                {%- do adapter.dispatch('shallow_clone_table')(clone, prod, existing if existing is not none and not existing.is_view else none) -%}
+                {%- do adapter.dispatch('shallow_clone_table', 'dbt_platform')(clone, prod, existing if existing is not none and not existing.is_view else none) -%}
                 {%- do cloned.append(name) -%}
             {%- endif -%}
         {%- endfor -%}

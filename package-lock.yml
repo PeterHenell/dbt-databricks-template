@@ -1,0 +1,4 @@
+packages:
+  - local: tools/dbt_platform
+    name: dbt_platform
+sha1_hash: 3e24b9367392fe21dadc26f545223b8c1da157b2

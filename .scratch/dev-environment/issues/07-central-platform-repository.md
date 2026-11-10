@@ -20,7 +20,7 @@
 |---|---|
 | `scripts/devenv.py`, `scripts/setup_dev.py`, `scripts/build_changed.py`, `tests/test_devenv.py`, `tests/test_build_changed.py` | platform repo: `dbtp` CLI and its tests |
 | `macros/generate_schema_name.sql`, `macros/generate_alias_name.sql`, `macros/source_modes.sql` (incl. the `source()` override) | platform dbt package; one-line stubs stay in the product repo |
-| `macros/personal_environment.sql`, `macros/assert_published_models_are_versioned.sql`, `macros/local_spark/` | platform dbt package (no stubs needed; `on-run-start` calls the package macro, `dispatch` config covers `spark__`) |
+| `macros/personal_environment.sql`, `macros/assert_published_models_are_versioned.sql`, `macros/local_spark/` | platform dbt package (`on-run-start` calls the package macro; the `spark__` override needs a root stub, see `## Comments`) |
 | `tests/test_macros.py` | platform repo integration tests |
 | `local/` (compose, Dockerfile, metastore SQL, Spark config, `tpch.sql`) | platform repo, run through `dbtp local …` |
 | `.devcontainer/Dockerfile` | platform image `…/dbt-platform:1` |
@@ -59,7 +59,7 @@ One platform repository, released with **one semantic version for everything** (
        subdirectory: dbt
        revision: "v1"          # moving major-version tag, see "Versions"
    ```
-   dbt only uses some built-in overrides from the root project: `generate_schema_name`, `generate_alias_name`, `source()`. For those the product repo keeps one-line stubs, e.g. `{{ return(dbt_platform.generate_schema_name(custom_schema_name, node)) }}`. dbt's `dispatch` search order covers the `spark__` overrides. The stubs only change in a new major version.
+   dbt only uses some built-in overrides from the root project: `generate_schema_name`, `generate_alias_name`, `source()`. For those the product repo keeps one-line stubs, e.g. `{{ return(dbt_platform.generate_schema_name(custom_schema_name, node)) }}`. The `spark__` override needs a stub too (dbt's `dispatch` search order doesn't work for it, see `## Comments`). The stubs only change in a new major version.
 
 2. **Platform CLI** (`dbtp`, a Python package; today's `scripts/`), with commands `setup`, `clone-sources`, `clean-dev`, `build-changed`, `local …`, `doctor`. The product repo's Makefile becomes a thin forwarder, so developers keep typing `make setup`:
    ```make
@@ -134,3 +134,11 @@ A platform change reaches many products without their MRs, so the platform repo'
 
 Not done: `dbtp doctor`, the platform repo itself, the macros package, the image, the CI component. All open questions above are still open. Two things this step settled that the later tickets should keep: the job's `publish_dbt_artifacts.py` stays a standalone file (Databricks SDK only) shipped in the artifact, and `ci_tools.py` stays standard-library Python, because both run where dbtp isn't installed.
 
+
+**2026-11-10, second step agreed with the user (in-repo only):** proposed ticket 2 ("Move the macros into the dbt package") is done inside this repository. The macros are the `dbt_platform` dbt package in `tools/dbt_platform/` (own `dbt_project.yml` and version), installed from `packages.yml` with `local: tools/dbt_platform`; moving it out means replacing that entry with `git:` + `revision:`. The root project keeps one-line stubs in `macros/dbt_platform.sql` (`generate_schema_name`, `generate_alias_name`, `source`, `spark__alter_column_set_constraints`) and `on-run-start` calls `dbt_platform.assert_published_models_are_versioned()`. Things this step found that correct the plan above:
+
+- **`dispatch` config does not cover the `spark__` override.** For namespace `dbt` dbt searches package by package and tries every adapter prefix inside each, so a search order of `[product, dbt_platform, dbt]` picks `dbt_platform.spark__alter_column_set_constraints` over dbt-databricks' `databricks__` one on Databricks. The same was already true of the root-project override on `main`: on Databricks it replaced dbt-databricks' macro and, given a model instead of a column dict, silently applied no NOT NULL constraints for enforced contracts. Now the package macro has a plain name, a root stub calls it, and it hands every adapter other than spark back to `<adapter>__alter_column_set_constraints`. `tests/test_macros.py` checks Databricks gets `SET NOT NULL`.
+- Package macros must call each other with the `dbt_platform.` prefix; unprefixed calls fail when a root-project node is the caller.
+- `dbt deps` installs a `local:` package as an absolute symlink. The release artifact now copies it (`installed_files` follows links), and `dbtp local dbt` runs `dbt deps` on the host and makes the link relative so it resolves in the container. `dbtp parse` and the `tests/` fixture run `dbt deps` first. With a `git:` package none of this is needed.
+
+Not done: the platform repository, `dbtp doctor`, the image, the CI component. All open questions above are still open.

@@ -46,6 +46,26 @@ def test_artifact_includes_installed_packages_and_is_reproducible(tmp_path):
     assert '"version": "v1"' in (tmp_path / "out" / "RELEASE.json").read_text()
 
 
+def test_artifact_copies_symlinked_local_packages(tmp_path):
+    # `dbt deps` installs a `local:` package as an absolute symlink; the artifact must
+    # hold the files themselves, without the package's own run output.
+    package = tmp_path / "tools" / "platform"
+    (package / "macros").mkdir(parents=True)
+    (package / "macros" / "m.sql").write_text("{% macro m() %}{% endmacro %}")
+    (package / "dbt_project.yml").write_text("name: platform\n")
+    (package / "target").mkdir()
+    (package / "target" / "manifest.json").write_text("{}")
+    (tmp_path / "dbt_packages").mkdir()
+    (tmp_path / "dbt_packages" / "platform").symlink_to(package)
+
+    assert release.installed_files(tmp_path) == [
+        "dbt_packages/platform/dbt_project.yml", "dbt_packages/platform/macros/m.sql"]
+    files = release.installed_files(tmp_path)
+    release.unpack(release.build_archive(tmp_path, "p", "v1", files, "abc"), tmp_path / "out")
+    unpacked = tmp_path / "out" / "dbt_packages" / "platform"
+    assert not unpacked.is_symlink() and (unpacked / "macros" / "m.sql").is_file()
+
+
 class FakeRegistry:
     def __init__(self, stored: dict | None = None):
         self.stored = dict(stored or {})

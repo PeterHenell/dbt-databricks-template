@@ -17,5 +17,7 @@ def parse_command() -> list[str]:
 
 
 def parse(project: Project) -> int:
-    """`dbt parse` with the deployment profile (ADR 0002), no connection and no login."""
-    return devenv.run(parse_command(), project, env={**os.environ, **PARSE_ENV})
+    """`dbt deps`, then `dbt parse` with the deployment profile (ADR 0002), no connection
+    and no login. Parsing needs the installed packages, e.g. the platform macros."""
+    env = {**os.environ, **PARSE_ENV}
+    return devenv.run(["dbt", "deps"], project, env=env) or devenv.run(parse_command(), project, env=env)

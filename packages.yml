@@ -1,0 +1,4 @@
+packages:
+  # The platform macros (tools/dbt_platform/README.md). Once the package has its own
+  # repository this becomes a `git:` entry with a `revision:` (dev-environment#07).
+  - local: tools/dbt_platform

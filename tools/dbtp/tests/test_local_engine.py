@@ -1,4 +1,6 @@
-"""`dbtp local …`: compose command choice, readiness wait, devcontainer guard."""
+"""`dbtp local …`: compose command choice, readiness wait, devcontainer guard, package links."""
+
+import os
 
 import pytest
 
@@ -45,3 +47,32 @@ def test_up_stops_when_compose_fails(tmp_path, fake_bin, monkeypatch):
     with pytest.raises(SystemExit) as exit_info:
         local_engine.up(Project(tmp_path))
     assert exit_info.value.code == 3
+
+
+def test_package_links_into_the_repository_become_relative(tmp_path):
+    (tmp_path / "dbt_project.yml").write_text("name: p\n")
+    (tmp_path / "tools" / "platform").mkdir(parents=True)
+    outside = tmp_path.parent / f"{tmp_path.name}-elsewhere"
+    outside.mkdir()
+    packages = tmp_path / "dbt_packages"
+    packages.mkdir()
+    (packages / "platform").symlink_to(tmp_path / "tools" / "platform")  # as `dbt deps` makes it
+    (packages / "other").symlink_to(outside)                             # outside the mount: kept
+    (packages / "hub_pkg").mkdir()                                        # a copied package: kept
+
+    changed = local_engine.relative_package_links(Project(tmp_path))
+    assert changed == [packages / "platform"]
+    assert os.readlink(packages / "platform") == os.path.join("..", "tools", "platform")
+    assert (packages / "platform").resolve() == tmp_path / "tools" / "platform"
+    assert os.readlink(packages / "other") == str(outside)
+    assert local_engine.relative_package_links(Project(tmp_path)) == []
+
+
+def test_dbt_installs_packages_on_the_host_first(tmp_path, fake_bin, monkeypatch):
+    monkeypatch.delenv("DBT_DEVCONTAINER", raising=False)
+    monkeypatch.setenv("COMPOSE_CMD", "fakecompose")
+    fake_bin("fakecompose", f'echo "compose $*" >> {tmp_path}/calls\n')
+    fake_bin("dbt", f'echo "dbt $*" >> {tmp_path}/calls\n')
+    assert local_engine.dbt(Project(tmp_path), ["run"]) == 0
+    calls = (tmp_path / "calls").read_text().splitlines()
+    assert calls[-2:] == ["dbt deps", "compose -f local/compose.yml run --rm dbt run"]

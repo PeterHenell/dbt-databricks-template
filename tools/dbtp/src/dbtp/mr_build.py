@@ -3,7 +3,7 @@
 Runs in the MR pipeline as the team identity, in the team catalog of the dev
 workspace (`config/dev-environment.toml`), with target `mr` of deploy/profiles.yml.
 No `--defer` (deferring to product dev is a planned later improvement), and sources
-are read from prod (non-personal targets always do, macros/source_modes.sql).
+are read from prod (non-personal targets always do, source_modes.sql in the dbt_platform package).
 
 Authentication: whatever the Databricks SDK finds in the environment. In GitLab that
 is OIDC workload identity federation (DATABRICKS_AUTH_TYPE=env-oidc, DATABRICKS_CLIENT_ID,
