@@ -20,3 +20,12 @@ select
     cast((id * 7919 % 500000) / 100.0 as decimal(18, 2)) as o_totalprice,
     date_add(date'1992-01-01', cast(id % 2400 as int)) as o_orderdate
 from range(1, 10001);
+
+-- Not used by the sample models: docs/first-models.md adds it as a new source.
+create or replace table tpch.nation using delta as
+select
+    id as n_nationkey,
+    concat('NATION_', cast(id as string)) as n_name,
+    cast(id % 5 as bigint) as n_regionkey,
+    'stand-in row' as n_comment
+from range(0, 25);

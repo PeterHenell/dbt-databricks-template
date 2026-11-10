@@ -116,9 +116,11 @@ def test_stubs_apply_the_package_schema_and_alias_names(tmp_path):
     models = [n for n in nodes.values()
               if n["resource_type"] == "model" and n["package_name"] == PRODUCT]
     # Whatever the product's models are: a staging model, and a version of a published one.
-    staging = next(n for n in models if n["config"]["schema"] == "staging")
+    staging = next((n for n in models if n["config"]["schema"] == "staging"), None)
+    published = next((n for n in models if n["config"]["schema"] == "published"), None)
+    if staging is None or published is None:
+        pytest.skip("needs at least one staging and one published model")
     assert staging["schema"] == f"{PRODUCT}__pe__staging" and staging["alias"] == staging["name"]
-    published = next(n for n in models if n["config"]["schema"] == "published")
     assert published["version"] is not None
     assert published["schema"] == f"{PRODUCT}__pe__v{published['version']}"
     assert published["alias"] == published["name"]  # plain name, no `_vN`

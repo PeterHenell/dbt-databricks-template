@@ -1,7 +1,7 @@
 # The platform's dbt macros, as a dbt package: schema and alias naming, source modes,
 # personal and MR environment cleanup, the published-interface check and the local
 # Spark overrides. It lives in the template for now (installed from packages.yml with
-# `local:`), written to move into a repository of its own (dev-environment#07).
+# `local:`), written to move into a repository of its own.
 # It knows nothing about the product: it reads the product name from `project_name`
 # and only looks at the root project's nodes.
 name: dbt_platform

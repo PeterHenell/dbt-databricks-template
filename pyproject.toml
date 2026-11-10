@@ -22,7 +22,7 @@ package = false
 
 # The tooling is its own package (tools/dbtp), installed into this environment. It is
 # a workspace member for now; once it has its own repository, this source becomes a
-# git URL or package index with a version (dev-environment#07).
+# git URL or package index with a version.
 [tool.uv.workspace]
 members = ["tools/dbtp"]
 

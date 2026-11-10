@@ -7,7 +7,7 @@ A GitLab repository template for one **data product**: a dbt project on Databric
 
 Terms in bold are defined in [`GLOSSARY.md`](GLOSSARY.md). Decisions and their reasons are in [`docs/adr/`](docs/adr/). Every workflow, step by step with diagrams: [`docs/workflows.md`](docs/workflows.md).
 
-> Status: the development tooling is verified offline and on the local Spark engine; the deployment is verified offline only (see [`docs/ci-cd.md`](docs/ci-cd.md), "Not verified yet"). Expect to fix small things on the first real run.
+> Status: the development tooling is verified offline and on the local Spark engine (the Databricks logins, `make clone-sources`, `make clean-dev` and `make build-changed` have not run on a workspace yet); the deployment is verified offline only (see [`docs/ci-cd.md`](docs/ci-cd.md), "Not verified yet"). Expect to fix small things on the first real run.
 
 ## 1. Ask the platform team for these
 
@@ -22,20 +22,19 @@ Terms in bold are defined in [`GLOSSARY.md`](GLOSSARY.md). Decisions and their r
 
 ## 2. Turn the template into your data product
 
-Create the repository from this template in GitLab, then:
+Create the repository from this template in GitLab (**New project → Create from template**), clone it and open it in the dev container ([`docs/dev-container.md`](docs/dev-container.md)). The template works as it is: its sample product, `sample_product`, has a source, models, a seed and tests that build without changes.
 
-1. **Name the product.** The data product name is the dbt project name: lowercase letters and digits joined by single underscores (no `__`). Replace `sample_product` with it in:
-   - `dbt_project.yml`: both `name` and `profile`, and the model block `models: sample_product:`;
-   - `deploy/profiles.yml`: the top-level key, and the `mr` target's `schema: <product>__mr`;
-   - `databricks.yml`: `bundle.name`;
-   - `local/profiles.yml`: the top-level key.
+1. **Initialize the repository** with your data product name and the team's dev settings:
 
-   Also change `name` in `pyproject.toml` if you like. `make setup` and `make test-tooling` fail if these names don't match.
-2. **Team settings:** fill in `config/dev-environment.toml` (dev workspace host, team SQL warehouse, team catalog, product dev catalog).
-3. **Deployment settings:** fill in the `<placeholders>` of both targets in `databricks.yml`: workspace host, product catalog, SQL warehouse, product identity (application ID). The `dev` target must use the same host and product dev catalog as `config/dev-environment.toml`. Set the prod schedule (`variables.schedule`, a Quartz cron expression).
-4. **Sources:** replace the sample `tpch` source (`models/staging/tpch/`, the `tpch_*` vars in `dbt_project.yml`, `local/tpch.sql`) with your real sources. Keep the locations in variables.
-5. **Models:** replace the sample models. Keep the layers (`staging`, `intermediate`, `published`). Every published model is versioned; see [`docs/published-interface.md`](docs/published-interface.md).
-6. **GitLab settings** ([details](docs/ci-cd.md)):
+   ```sh
+   uv run dbtp init
+   ```
+
+   It asks for the data product name (lowercase letters and digits joined by single underscores, no `__`; it is also the dbt project name), the dev workspace URL, the team's SQL warehouse, the team catalog and the product dev catalog. It writes the name into every file that must repeat it (`dbt_project.yml`, `deploy/profiles.yml`, `databricks.yml`, `local/profiles.yml`), the settings into `config/dev-environment.toml`, and the dev workspace and product dev catalog into the `dev` target of `databricks.yml`. You can run it again to change any of them; `uv run dbtp init --help` lists the options for running it without questions. Commit the result.
+2. **Build the samples** to check that your environment works: `make setup`, `make clone-sources`, `make build` (section 3). Then follow [`docs/first-models.md`](docs/first-models.md) to add your own models.
+3. **Deployment settings:** fill in the `<placeholders>` of the `prod` target in `databricks.yml` (prod workspace host, product prod catalog, SQL warehouse, product identity), and the `dev` target's SQL warehouse and product identity. Set the prod schedule (`variables.schedule`, a Quartz cron expression).
+4. **Sources and models:** replace the sample `tpch` source (`models/staging/tpch/`, the `tpch_*` vars in `dbt_project.yml`, `local/tpch.sql`), the sample models and the sample seed with your own, as [`docs/first-models.md`](docs/first-models.md) shows. Keep the source locations in variables and keep the layers (`staging`, `intermediate`, `published`, `seeds`). Every published model is versioned; see [`docs/published-interface.md`](docs/published-interface.md).
+5. **GitLab settings** ([details](docs/ci-cd.md)):
    - CI/CD variables `DATABRICKS_OIDC_AUDIENCE`, `TEAM_CLIENT_ID`, `PRODUCT_DEV_CLIENT_ID`/`_SECRET` and `PRODUCT_PROD_CLIENT_ID`/`_SECRET`. Mark the product ones masked and protected.
    - Protected tags for release tags (e.g. `v*`), with a restricted list of who may create them.
    - On Premium or Ultimate, a protected environment `prod` with deployment approvals.
@@ -43,7 +42,7 @@ Create the repository from this template in GitLab, then:
 
 ## 3. Daily development
 
-Work in the dev container (`.devcontainer/`, see [`docs/dev-container.md`](docs/dev-container.md)). Once:
+Work in the dev container (`.devcontainer/`, see [`docs/dev-container.md`](docs/dev-container.md)). New to the project? [`docs/first-models.md`](docs/first-models.md) takes you from the sample models to your own. Once:
 
 ```sh
 make setup              # tools, Databricks login, your profiles.yml (asks for your developer alias), dbt deps
@@ -56,6 +55,7 @@ make clone-sources                # personal shallow clones of the sources (defa
 make build                        # dbt build: build + test everything into your personal environment
 make build SELECT=+customers      # part of the graph (also: make run, make test, make compile)
 make build SOURCE_MODE=prod       # read prod sources directly for one run
+uv run dbt show --select customers   # look at a model's rows
 make build-changed                # deferred build: only what you changed; the rest from product dev
 make lint parse                   # before you push: sqlfluff, yamllint, offline dbt parse
 make clean-dev                    # drop your whole personal environment
@@ -92,7 +92,7 @@ Product dev always holds the latest release candidate and prod the latest approv
 
 | Path | What |
 |---|---|
-| `models/`, `macros/`, `dbt_project.yml`, `packages.yml` | The dbt project (`macros/` holds only the stubs dbt needs in the root project) |
+| `models/`, `seeds/`, `macros/`, `dbt_project.yml`, `packages.yml` | The dbt project (`macros/` holds only the stubs dbt needs in the root project) |
 | `tools/dbt_platform/` | The platform's dbt macros as a dbt package (schema naming, source modes, environment cleanup, local-Spark overrides), installed by `dbt deps` |
 | `config/dev-environment.toml` | Team settings for personal environments |
 | `databricks.yml`, `resources/` | The Databricks Asset Bundle (the job) |
@@ -102,3 +102,5 @@ Product dev always holds the latest release candidate and prod the latest approv
 | `local/` | The local Spark engine |
 | `tests/` | Tests of the project's macros, bundle, deploy profile and artifact (`make test-tooling`, which also runs `tools/dbtp/tests/`) |
 | `docs/` | Guides and ADRs |
+
+The team owns the repository. The exception for now is the shared tooling, `tools/dbtp/` and `tools/dbt_platform/` (with the stubs in `macros/dbt_platform.sql`): the platform team maintains it and will move it into its own repository. Don't change it here; tell the platform team what you need.

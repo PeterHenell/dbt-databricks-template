@@ -14,7 +14,7 @@ from dbtp.devenv import Project
 
 
 def clone_sources(project: Project) -> int:
-    """(Re)create the developer's shallow clones of every source (dev-environment#04)."""
+    """(Re)create the developer's shallow clones of every source (ADR 0005)."""
     return devenv.run(["dbt", "-q", "run-operation", "clone_sources"], project)
 
 
