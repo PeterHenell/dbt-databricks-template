@@ -6,3 +6,28 @@ models:
     columns:
       - name: customer_id
         data_tests: [unique, not_null]
+      - name: number_of_open_orders
+        description: Orders whose status is open (see the `order_statuses` seed).
+
+# Unit tests check a model's logic on a few hand-written rows, before the model is built.
+# They run with `make build` and `make test`; `make test SELECT=test_type:unit` runs only them.
+unit_tests:
+  - name: test_orders_are_counted_and_summed_per_customer
+    model: int_orders_aggregated_to_customer
+    given:
+      - input: ref('stg_tpch__orders')
+        rows:
+          - {order_id: 1, customer_id: 10, order_status: "O", total_price: 100.00, order_date: "2024-01-01"}
+          - {order_id: 2, customer_id: 10, order_status: "F", total_price: 50.00, order_date: "2024-03-01"}
+          - {order_id: 3, customer_id: 20, order_status: "P", total_price: 10.00, order_date: "2024-02-01"}
+      - input: ref('order_statuses')
+        rows:
+          - {order_status: "F", is_open: false}
+          - {order_status: "O", is_open: true}
+          - {order_status: "P", is_open: true}
+    expect:
+      rows:
+        - {customer_id: 10, number_of_orders: 2, number_of_open_orders: 1, lifetime_value: 150.00,
+           first_order_date: "2024-01-01", most_recent_order_date: "2024-03-01"}
+        - {customer_id: 20, number_of_orders: 1, number_of_open_orders: 1, lifetime_value: 10.00,
+           first_order_date: "2024-02-01", most_recent_order_date: "2024-02-01"}
