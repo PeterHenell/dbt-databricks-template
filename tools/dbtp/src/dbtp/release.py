@@ -6,20 +6,19 @@ the installed `dbt_packages/`, `deploy/profiles.yml` and the job's helper script
 It is deployed unchanged to product dev and prod; the bundle target supplies hosts,
 catalogs, warehouses and identities.
 
-Commands (the Makefile and .gitlab-ci.yml call them):
+Commands (`dbtp release …`; the Makefile and .gitlab-ci.yml call them):
 
-  build --version V   build target/release/<product>-<V>.tar.gz and unpack it into
+  build --version V   `dbt deps`, then build target/release/<product>-<V>.tar.gz and unpack it into
                       target/release/bundle/ (what `make bundle-deploy` deploys)
   check-tag           CI, release pipeline: the tag is a valid GitLab package version
                       and its commit is on the default branch
   publish             CI: reuse the archive in the GitLab generic package registry if
-                      it is there, otherwise build and upload it; then unpack it
+                      it is there, otherwise `dbt deps`, build and upload it; then unpack it
   fetch               CI: download the archive from the registry (never build); unpack
 """
 
 from __future__ import annotations
 
-import argparse
 import gzip
 import io
 import json
@@ -27,7 +26,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import tarfile
 import urllib.error
 import urllib.parse
@@ -35,11 +33,20 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-import devenv
-from devenv import SetupError
+from dbtp import devenv
+from dbtp.devenv import Project, SetupError
 
-RELEASE_DIR = devenv.REPO_ROOT / "target" / "release"
-BUNDLE_DIR = RELEASE_DIR / "bundle"
+# The job's helper script ships inside the artifact; the bundle points at this path.
+JOB_SCRIPT = "tools/dbtp/src/dbtp/jobs/publish_dbt_artifacts.py"
+
+
+def release_dir(project: Project) -> Path:
+    return project.target_dir / "release"
+
+
+def bundle_dir(project: Project) -> Path:
+    """Where the unpacked artifact goes; `dbtp bundle deploy|run` deploy from here."""
+    return release_dir(project) / "bundle"
 
 # Tracked files and directories that go into the artifact. Anything else in the
 # repository (developer tooling, docs, local engine, CI config) stays out.
@@ -57,7 +64,7 @@ INCLUDE = (
     "snapshots/",
     "analyses/",
     "tests/dbt/",
-    "scripts/publish_dbt_artifacts.py",
+    JOB_SCRIPT,
 )
 # Installed by `dbt deps` (gitignored) and still part of the artifact.
 INSTALLED = ("dbt_packages",)
@@ -135,16 +142,17 @@ def archive_name(product: str, version: str) -> str:
 
 
 def build(root: Path, product: str, version: str) -> bytes:
+    """`dbt deps` (the artifact ships the installed packages), then the archive."""
+    subprocess.run(["dbt", "deps"], cwd=root, check=True)
     files = tracked_files(root) + installed_files(root)
     return build_archive(root, product, version, files, git_commit(root))
 
 
-def save_and_unpack(archive: bytes, product: str, version: str,
-                    release_dir: Path = RELEASE_DIR) -> Path:
-    release_dir.mkdir(parents=True, exist_ok=True)
-    path = release_dir / archive_name(product, version)
+def save_and_unpack(archive: bytes, product: str, version: str, project: Project) -> Path:
+    release_dir(project).mkdir(parents=True, exist_ok=True)
+    path = release_dir(project) / archive_name(product, version)
     path.write_bytes(archive)
-    unpack(archive, release_dir / "bundle")
+    unpack(archive, bundle_dir(project))
     return path
 
 
@@ -216,7 +224,7 @@ def fetch(registry, product: str, version: str) -> bytes:
     return archive
 
 
-def commit_on_branch(sha: str, branch: str, root: Path = devenv.REPO_ROOT) -> bool:
+def commit_on_branch(sha: str, branch: str, root: Path) -> bool:
     subprocess.run(["git", "fetch", "--quiet", "origin", branch], cwd=root, check=True)
     return subprocess.run(["git", "merge-base", "--is-ancestor", sha, f"origin/{branch}"],
                           cwd=root, check=False).returncode == 0
@@ -226,25 +234,17 @@ def ci_tag() -> str:
     return os.environ.get("CI_COMMIT_TAG", "")
 
 
-def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    sub = parser.add_subparsers(dest="command", required=True)
-    build_cmd = sub.add_parser("build")
-    build_cmd.add_argument("--version", default="local")
-    sub.add_parser("check-tag")
-    sub.add_parser("publish")
-    sub.add_parser("fetch")
-    args = parser.parse_args(argv)
-
-    root = devenv.REPO_ROOT
+def main(project: Project, command: str, version: str = "local") -> int:
+    root = project.root
+    rel = lambda path: path.relative_to(root)  # noqa: E731
     try:
-        product = devenv.read_product()
-        if args.command == "build":
-            if problem := tag_problem(args.version):
+        product = project.product()
+        if command == "build":
+            if problem := tag_problem(version):
                 raise SetupError(problem.replace("Release tag", "Version"))
-            path = save_and_unpack(build(root, product, args.version), product, args.version)
-            print(f"Built {path.relative_to(root)}; unpacked into {BUNDLE_DIR.relative_to(root)}/.")
-        elif args.command == "check-tag":
+            path = save_and_unpack(build(root, product, version), product, version, project)
+            print(f"Built {rel(path)}; unpacked into {rel(bundle_dir(project))}/.")
+        elif command == "check-tag":
             tag, sha = ci_tag(), os.environ.get("CI_COMMIT_SHA", "")
             branch = os.environ.get("CI_DEFAULT_BRANCH", "main")
             if problem := tag_problem(tag):
@@ -255,20 +255,18 @@ def main(argv: list[str] | None = None) -> None:
                     f"made from {branch} only (ADR 0007; for hotfixes see that ADR)."
                 )
             print(f"Release tag {tag} ({sha[:12]}) is on {branch}.")
-        else:
+        elif command in ("publish", "fetch"):
             tag = ci_tag()
             if problem := tag_problem(tag):
                 raise SetupError(problem)
             registry = Registry.from_ci_env()
-            archive = (publish(registry, root, product, tag)[0] if args.command == "publish"
+            archive = (publish(registry, root, product, tag)[0] if command == "publish"
                        else fetch(registry, product, tag))
-            save_and_unpack(archive, product, tag)
-            print(f"Unpacked {archive_name(product, tag)} into {BUNDLE_DIR.relative_to(root)}/.")
-    except SetupError as error:
-        devenv.fail(str(error))
+            save_and_unpack(archive, product, tag, project)
+            print(f"Unpacked {archive_name(product, tag)} into {rel(bundle_dir(project))}/.")
+        else:
+            raise SetupError(f"Unknown release command '{command}'.")
     except subprocess.CalledProcessError as error:
-        devenv.fail(f"{' '.join(map(str, error.cmd))} failed with exit code {error.returncode}.")
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+        raise SetupError(
+            f"{' '.join(map(str, error.cmd))} failed with exit code {error.returncode}.") from None
+    return 0

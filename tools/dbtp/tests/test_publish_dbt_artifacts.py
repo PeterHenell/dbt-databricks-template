@@ -1,4 +1,4 @@
-"""scripts/publish_dbt_artifacts.py with a fake Databricks SDK client."""
+"""dbtp/jobs/publish_dbt_artifacts.py (the job task) with a fake Databricks SDK client."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import publish_dbt_artifacts as publish
+from dbtp.jobs import publish_dbt_artifacts as publish
 
 
 def tar_gz(files: dict[str, bytes]) -> bytes:

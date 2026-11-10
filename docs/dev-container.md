@@ -1,6 +1,6 @@
 # Dev container
 
-Developers may be on macOS, Linux or Windows. The toolkit (`make`, the scripts in `scripts/`, dbt, the Databricks CLI) is written for one environment only: the Linux dev container in `.devcontainer/`. Use it rather than installing the tools yourself.
+Developers may be on macOS, Linux or Windows. The toolkit (`make`, the `dbtp` tooling in `tools/dbtp/`, dbt, the Databricks CLI) is written for one environment only: the Linux dev container in `.devcontainer/`. Use it rather than installing the tools yourself.
 
 ## What you need
 
@@ -27,4 +27,4 @@ Change `UV_VERSION`/`DATABRICKS_CLI_VERSION` (and the `uv` image tag) in `.devco
 
 ## Not in the dev container
 
-The local Spark engine (`make local-*`, `local/`) starts containers of its own. Run those targets on the host, where Podman or Docker is.
+The local Spark engine (`make local-*`, `local/`) starts containers of its own. Run those targets on the host, where Podman or Docker is. The targets run `uv run dbtp local …`, so the host also needs [uv](https://docs.astral.sh/uv/) (it brings its own Python).

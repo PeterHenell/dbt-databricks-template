@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-import devenv
+from dbtp import devenv
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG = devenv.DevConfig("https://adb-1.2.azuredatabricks.net", "wh1", "team_x")

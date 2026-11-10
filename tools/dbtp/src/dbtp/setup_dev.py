@@ -1,22 +1,22 @@
-"""`make setup`: create the developer's personal dev profile.
+"""`dbtp setup` (`make setup`): create the developer's personal dev profile.
 
 1. Checks for a Databricks CLI OAuth (user-to-machine) login to the dev workspace.
 2. Suggests a developer alias from the logged-in user's name and lets the developer
    accept or change it.
 3. Writes the gitignored `profiles.yml` at the repo root (ADR 0002).
+4. Installs the dbt packages (`dbt deps`).
 
-Python dependencies are installed by the Makefile (`uv sync`) before this runs.
+Python dependencies (dbtp itself among them) are installed by `uv sync` before this runs.
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import subprocess
 import urllib.request
 
-import devenv
-from devenv import SetupError
+from dbtp import devenv
+from dbtp.devenv import Project, SetupError
 
 
 def cli_access_token(host: str) -> str:
@@ -105,8 +105,7 @@ def choose_alias(suggested: str, existing: str | None, preset: str | None, assum
         default = ""
 
 
-def write_profile(content: str, assume_yes: bool) -> bool:
-    path = devenv.DEV_PROFILE
+def write_profile(path, content: str, assume_yes: bool) -> bool:
     if path.exists() and path.read_text() != content:
         print(f"\n{path.name} exists and will be replaced. Current content:\n")
         print(path.read_text())
@@ -117,41 +116,30 @@ def write_profile(content: str, assume_yes: bool) -> bool:
     return True
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--alias", help="use this developer alias without asking")
-    parser.add_argument("--yes", action="store_true", help="accept all defaults (non-interactive)")
-    args = parser.parse_args()
+def main(project: Project, alias: str | None = None, assume_yes: bool = False) -> int:
+    product = project.product()
+    config = devenv.read_dev_config(project.dev_config)
 
-    try:
-        product = devenv.read_product()
-        config = devenv.read_dev_config()
+    token = cli_access_token(config.host)
+    print(f"Databricks CLI login OK for {config.host}")
 
-        token = cli_access_token(config.host)
-        print(f"Databricks CLI login OK for {config.host}")
+    first, last = current_user_names(config.host, token)
+    if not (first and last):
+        first, last = git_user_names()
+    suggested = devenv.suggest_alias(first, last)
+    existing = devenv.alias_from_profile(product, project.dev_profile)
 
-        first, last = current_user_names(config.host, token)
-        if not (first and last):
-            first, last = git_user_names()
-        suggested = devenv.suggest_alias(first, last)
-        existing = devenv.alias_from_profile(product)
+    chosen = choose_alias(suggested, existing, alias, assume_yes)
+    prefix = devenv.personal_prefix(product, chosen)
 
-        alias = choose_alias(suggested, existing, args.alias, args.yes)
-        prefix = devenv.personal_prefix(product, alias)
-
-        if write_profile(devenv.render_profile(product, alias, config), args.yes):
-            print(
-                f"\nWrote profiles.yml: catalog '{config.team_catalog}', "
-                f"personal environment '{prefix}__<layer>'."
-            )
+    if write_profile(project.dev_profile, devenv.render_profile(product, chosen, config), assume_yes):
         print(
-            "\nNext: `uv run dbt build` (the first dbt run opens a browser to sign in to dbt-databricks)."
+            f"\nWrote profiles.yml: catalog '{config.team_catalog}', "
+            f"personal environment '{prefix}__<layer>'."
         )
-    except SetupError as error:
-        devenv.fail(str(error))
-    except (KeyboardInterrupt, EOFError):
-        devenv.fail("setup cancelled")
-
-
-if __name__ == "__main__":
-    main()
+    if code := devenv.run(["dbt", "deps"], project):
+        return code
+    print(
+        "\nNext: `uv run dbt build` (the first dbt run opens a browser to sign in to dbt-databricks)."
+    )
+    return 0

@@ -1,5 +1,5 @@
 # GitLab CI/CD for this data product (docs/ci-cd.md; ADRs 0006-0009).
-# Every job only calls `make` targets: the logic lives in the Makefile and scripts/.
+# Every job only calls `make` targets, which forward to the dbtp tooling (tools/dbtp/).
 #
 #   merge request  static checks, security scans, MR full build (team identity)
 #   main           static checks, security scans. Nothing is deployed (ADR 0007).

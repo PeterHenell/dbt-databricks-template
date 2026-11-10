@@ -62,7 +62,7 @@ The inner loop runs in your personal environment; the MR pipeline is the gate. *
 
 1. **Branch** from an up-to-date `main`.
 2. **Change models** and build only what you need: `uv run dbt build --select <model>+` or `+<model>`, or `make build-changed`, which builds only what you changed (`state:modified+`) and reads everything unchanged from product dev (needs a release in product dev first).
-3. **Check before pushing**: `make lint parse` (sqlfluff, yamllint, offline `dbt parse` with the deploy profile) and, if you touched `scripts/`, macros, the bundle or CI, `make test-tooling`.
+3. **Check before pushing**: `make lint parse` (sqlfluff, yamllint, offline `dbt parse` with the deploy profile) and, if you touched `tools/dbtp/`, macros, the bundle or CI, `make test-tooling`.
 4. **Push and open a merge request.** The pipeline runs the static checks and then the **MR build**: it drops `<product>__mr__*` and builds the whole project into it from prod sources, as the team identity. MR builds run one at a time (`resource_group: mr-build`), so a second MR waits for the first.
 5. **Review and merge.** The `main` pipeline runs the static checks again. Nothing is deployed.
 
@@ -177,7 +177,7 @@ Source: [`diagrams/workflow-9-retire.puml`](diagrams/workflow-9-retire.puml)
 
 ## 10. Try a change on the local engine (no Databricks)
 
-`local/` runs the project on Apache Spark + Delta Lake in containers, through dbt-spark. Use it offline, or to try a change without a warehouse. Run these on the **host** (Podman or Docker), not in the dev container. There is no Unity Catalog locally, and a green local build doesn't replace a Databricks build.
+`local/` runs the project on Apache Spark + Delta Lake in containers, through dbt-spark. Use it offline, or to try a change without a warehouse. Run these on the **host** (Podman or Docker, plus uv for `dbtp`), not in the dev container. There is no Unity Catalog locally, and a green local build doesn't replace a Databricks build.
 
 ![10. Try a change on the local engine](diagrams/workflow-10-local.svg)
 

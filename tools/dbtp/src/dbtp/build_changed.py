@@ -1,4 +1,4 @@
-"""`make build-changed`: a deferred build of only the models you changed.
+"""`dbtp build-changed` (`make build-changed`): a deferred build of only the models you changed.
 
 1. Downloads `latest/manifest.json` from the product dev catalog's `_dbt_artifacts.state`
    volume (the latest release candidate, ADR 0006), with your own Databricks CLI login.
@@ -6,26 +6,26 @@
    personal environment. References to unchanged models resolve to the product dev
    catalog through the downloaded manifest.
 
-Extra arguments are passed on to dbt, e.g. `make build-changed ARGS="--exclude published"`.
+Extra arguments are passed on to dbt, e.g. `make build-changed ARGS="--exclude published"`
+or `dbtp build-changed --exclude published`.
 """
 
 from __future__ import annotations
 
-import argparse
 import os
-import shlex
 import subprocess
-import sys
 from pathlib import Path
 
-import devenv
-from devenv import SetupError
-from setup_dev import cli_access_token
-
-STATE_DIR = devenv.REPO_ROOT / "target" / "product-dev-state"
+from dbtp import devenv
+from dbtp.devenv import Project, SetupError
+from dbtp.setup_dev import cli_access_token
 
 
-def download_manifest(host: str, catalog: str, state_dir: Path = STATE_DIR) -> Path:
+def state_dir(project: Project) -> Path:
+    return project.target_dir / "product-dev-state"
+
+
+def download_manifest(host: str, catalog: str, state_dir: Path) -> Path:
     source = f"dbfs:{devenv.artifacts_volume_path(catalog)}/latest/manifest.json"
     state_dir.mkdir(parents=True, exist_ok=True)
     target = state_dir / "manifest.json"
@@ -65,32 +65,16 @@ def dbt_command(state_dir: Path, extra: list[str]) -> list[str]:
     ]
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--manifest-dir", type=Path,
-                        help="use a manifest.json already in this directory instead of downloading it")
-    parser.add_argument("dbt_args", nargs="*", help="extra arguments for dbt build")
-    args = parser.parse_args()
-
-    try:
-        if args.manifest_dir:
-            state_dir = args.manifest_dir
-            if not (state_dir / "manifest.json").exists():
-                raise SetupError(f"No manifest.json in {state_dir}")
-        else:
-            config = devenv.read_dev_config()
-            catalog = devenv.read_product_dev_catalog()
-            cli_access_token(config.host)  # clear message if not logged in
-            download_manifest(config.host, catalog)
-            print(f"Deferring to the product dev manifest of catalog {catalog}.")
-            state_dir = STATE_DIR
-    except SetupError as error:
-        devenv.fail(str(error))
-
-    command = dbt_command(state_dir, args.dbt_args)
-    print("+ " + shlex.join(command), flush=True)
-    sys.exit(subprocess.call(command, cwd=devenv.REPO_ROOT))
-
-
-if __name__ == "__main__":
-    main()
+def main(project: Project, dbt_args: list[str], manifest_dir: Path | None = None) -> int:
+    if manifest_dir:
+        state = manifest_dir
+        if not (state / "manifest.json").exists():
+            raise SetupError(f"No manifest.json in {state}")
+    else:
+        config = devenv.read_dev_config(project.dev_config)
+        catalog = devenv.read_product_dev_catalog(project.dev_config)
+        cli_access_token(config.host)  # clear message if not logged in
+        state = state_dir(project)
+        download_manifest(config.host, catalog, state)
+        print(f"Deferring to the product dev manifest of catalog {catalog}.")
+    return devenv.run(dbt_command(state, dbt_args), project)

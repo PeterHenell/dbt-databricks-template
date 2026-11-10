@@ -93,7 +93,7 @@ Product dev always holds the latest release candidate and prod the latest approv
 | `databricks.yml`, `resources/` | The Databricks Asset Bundle (the job) |
 | `deploy/profiles.yml` | Deployment profile, only used with `--profiles-dir deploy` |
 | `.gitlab-ci.yml` | The pipelines (they only call `make` targets) |
-| `Makefile`, `scripts/` | Developer and CI tooling (`make help`) |
+| `Makefile`, `tools/dbtp/` | Developer and CI tooling: the `dbtp` package, and a Makefile that forwards to it (`make help`, `uv run dbtp --help`) |
 | `local/` | The local Spark engine |
-| `tests/` | Tests of the tooling (`make test-tooling`) |
+| `tests/` | Tests of the project's macros, bundle, deploy profile and artifact (`make test-tooling`, which also runs `tools/dbtp/tests/`) |
 | `docs/` | Guides and ADRs |

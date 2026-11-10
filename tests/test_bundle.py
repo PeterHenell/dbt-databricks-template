@@ -18,10 +18,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-import devenv
+from dbtp import devenv
 from mock_databricks import MockWorkspace
 
-ROOT = devenv.REPO_ROOT
+ROOT = Path(__file__).resolve().parent.parent
+PRODUCT = devenv.read_product(ROOT / "dbt_project.yml")
 
 
 def load(path: str):
@@ -34,11 +35,11 @@ def locked_versions() -> dict[str, str]:
 
 
 def test_bundle_name_is_the_product():
-    assert load("databricks.yml")["bundle"]["name"] == devenv.read_product()
+    assert load("databricks.yml")["bundle"]["name"] == PRODUCT
 
 
 def test_every_profile_is_named_after_the_product():
-    product = devenv.read_product()
+    product = PRODUCT
     for path in ("deploy/profiles.yml", "local/profiles.yml"):
         assert list(load(path)) == [product], f"{path}: top-level key must be the product name"
 
@@ -68,7 +69,7 @@ def test_only_prod_has_a_schedule():
 
 
 def test_deploy_profile_targets():
-    product = devenv.read_product()
+    product = PRODUCT
     outputs = load("deploy/profiles.yml")[product]["outputs"]
     assert set(outputs) == {"prod", "mr"}
     assert outputs["mr"]["schema"] == f"{product}__mr"
@@ -137,7 +138,7 @@ def test_deploy_profile_schema_names(tmp_path, target, prefix):
 @pytest.mark.skipif(shutil.which("databricks") is None, reason="Databricks CLI not installed")
 @pytest.mark.parametrize("target", ["dev", "prod"])
 def test_bundle_validates_against_mock_workspace(tmp_path, target):
-    for name in ("databricks.yml", "resources", "deploy", "scripts", "dbt_project.yml"):
+    for name in ("databricks.yml", "resources", "deploy", "tools", "dbt_project.yml"):
         source = ROOT / name
         (shutil.copytree if source.is_dir() else shutil.copy)(source, tmp_path / name)
     with MockWorkspace() as workspace:
