@@ -135,7 +135,8 @@ def dbt_ls(target: str, tmp_path: Path) -> list[dict]:
     result = subprocess.run(
         ["dbt", "-q", "ls", "--profiles-dir", "deploy", "--target", target,
          "--vars", "{deploy_catalog: cat_x, deploy_warehouse_id: wh1}",
-         "--resource-type", "model", "--output", "json", "--output-keys", "name database schema",
+         "--resource-type", "model", "--resource-type", "seed", "--resource-type", "snapshot",
+         "--output", "json", "--output-keys", "name database schema",
          "--target-path", str(tmp_path / "target"), "--log-path", str(tmp_path / "logs")],
         cwd=ROOT, env=env, capture_output=True, text=True, check=False, timeout=180,
     )
@@ -143,12 +144,36 @@ def dbt_ls(target: str, tmp_path: Path) -> list[dict]:
     return [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
 
 
-@pytest.mark.parametrize(("target", "prefix"), [("prod", ""), ("mr", "sample_product__mr__")])
-def test_deploy_profile_schema_names(tmp_path, target, prefix):
+def layers() -> set[str]:
+    """The `+schema` layers set in dbt_project.yml, for models, seeds and snapshots."""
+    found = set()
+
+    def walk(config):
+        if isinstance(config, dict):
+            for key, value in config.items():
+                if key == "+schema":
+                    found.add(value)
+                walk(value)
+
+    project = load("dbt_project.yml")
+    for resource in ("models", "seeds", "snapshots"):
+        walk(project.get(resource, {}))
+    return found
+
+
+@pytest.mark.parametrize(("target", "prefix"), [("prod", ""), ("mr", f"{PRODUCT}__mr__")])
+def test_every_node_is_built_into_a_layer_schema(tmp_path, target, prefix):
+    """Models, seeds and snapshots each land in a layer schema: none falls back to the
+    profile's schema (`default` in prod), e.g. a new model folder without `+schema`."""
     nodes = dbt_ls(target, tmp_path)
+    assert nodes
     assert {node["database"] for node in nodes} == {"cat_x"}
-    assert {node["schema"] for node in nodes} == {
-        prefix + layer for layer in ("staging", "intermediate", "v1", "v2")}
+    known = layers() - {"published"}
+    for node in nodes:
+        layer = node["schema"].removeprefix(prefix)
+        assert node["schema"].startswith(prefix) and (layer in known or re.fullmatch(r"v\d+", layer)), (
+            f"{node['name']} is built into schema '{node['schema']}': give its folder a layer "
+            "with `+schema` in dbt_project.yml")
 
 
 @pytest.mark.skipif(shutil.which("databricks") is None, reason="Databricks CLI not installed")

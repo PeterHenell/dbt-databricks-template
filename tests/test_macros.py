@@ -17,22 +17,24 @@ from dbtp import devenv
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG = devenv.DevConfig("https://adb-1.2.azuredatabricks.net", "wh1", "team_x")
+# The data product name, whatever `dbtp init` set it to.
+PRODUCT = devenv.read_product(REPO_ROOT / "dbt_project.yml")
 
 SCHEMAS = [
-    "sample_product__pe",
-    "sample_product__pe__staging",
-    "sample_product__pe__src_clone",
-    "sample_product__pehe__staging",   # an alias that starts with `pe`
-    "sample_product__pe_he__staging",  # an alias with an underscore
-    "sample_product__mr__staging",     # the shared MR schemas
+    f"{PRODUCT}__pe",
+    f"{PRODUCT}__pe__staging",
+    f"{PRODUCT}__pe__src_clone",
+    f"{PRODUCT}__pehe__staging",   # an alias that starts with `pe`
+    f"{PRODUCT}__pe_he__staging",  # an alias with an underscore
+    f"{PRODUCT}__mr__staging",     # the shared MR schemas
     "other_product__pe__staging",      # another data product
-    "sample_product_pe__staging",      # single underscore
+    f"{PRODUCT}_pe__staging",      # single underscore
     "default",
 ]
 
 
 def run_operation(tmp_path: Path, alias: str, macro: str, args: dict) -> subprocess.CompletedProcess:
-    (tmp_path / "profiles.yml").write_text(devenv.render_profile("sample_product", alias, CONFIG))
+    (tmp_path / "profiles.yml").write_text(devenv.render_profile(PRODUCT, alias, CONFIG))
     return subprocess.run(
         ["dbt", "-q", "run-operation", macro, "--args", json.dumps(args),
          "--profiles-dir", str(tmp_path), "--target-path", str(tmp_path / "target"),
@@ -44,9 +46,9 @@ def run_operation(tmp_path: Path, alias: str, macro: str, args: dict) -> subproc
 @pytest.mark.parametrize(
     ("alias", "expected"),
     [
-        ("pe", ["sample_product__pe", "sample_product__pe__src_clone", "sample_product__pe__staging"]),
-        ("pehe", ["sample_product__pehe__staging"]),
-        ("pe_he", ["sample_product__pe_he__staging"]),
+        ("pe", [f"{PRODUCT}__pe", f"{PRODUCT}__pe__src_clone", f"{PRODUCT}__pe__staging"]),
+        ("pehe", [f"{PRODUCT}__pehe__staging"]),
+        ("pe_he", [f"{PRODUCT}__pe_he__staging"]),
     ],
 )
 def test_clean_dev_only_matches_own_schemas(tmp_path, alias, expected):
@@ -84,11 +86,11 @@ def run_mr_operation(tmp_path: Path, target: str, args: dict) -> subprocess.Comp
 
 
 def test_mr_build_drops_only_the_mr_schemas(tmp_path):
-    schemas = SCHEMAS + ["sample_product__mr", "sample_product__mr__v1", "sample_product__mrx__staging"]
+    schemas = SCHEMAS + [f"{PRODUCT}__mr", f"{PRODUCT}__mr__v1", f"{PRODUCT}__mrx__staging"]
     result = run_mr_operation(tmp_path, "mr", {"dry_run": True, "schemas": schemas})
     assert result.returncode == 0, result.stdout + result.stderr
     listed = [line.strip() for line in result.stdout.splitlines() if line.startswith("  ")]
-    assert listed == ["sample_product__mr", "sample_product__mr__staging", "sample_product__mr__v1"]
+    assert listed == [f"{PRODUCT}__mr", f"{PRODUCT}__mr__staging", f"{PRODUCT}__mr__v1"]
 
 
 def test_mr_drop_refuses_prod_target(tmp_path):
@@ -103,7 +105,7 @@ def test_mr_drop_refuses_prod_target(tmp_path):
 def test_stubs_apply_the_package_schema_and_alias_names(tmp_path):
     """Parsing applies generate_schema_name/generate_alias_name: personal layer schemas,
     published versions in `vN` under the plain model name."""
-    (tmp_path / "profiles.yml").write_text(devenv.render_profile("sample_product", "pe", CONFIG))
+    (tmp_path / "profiles.yml").write_text(devenv.render_profile(PRODUCT, "pe", CONFIG))
     result = subprocess.run(
         ["dbt", "-q", "parse", "--profiles-dir", str(tmp_path), "--target-path", str(tmp_path / "target"),
          "--log-path", str(tmp_path / "logs")],
@@ -111,12 +113,15 @@ def test_stubs_apply_the_package_schema_and_alias_names(tmp_path):
     )
     assert result.returncode == 0, result.stdout + result.stderr
     nodes = json.loads((tmp_path / "target" / "manifest.json").read_text())["nodes"]
-    models = {n["unique_id"]: n for n in nodes.values()
-              if n["resource_type"] == "model" and n["package_name"] == "sample_product"}
-    staging = models["model.sample_product.stg_tpch__orders"]
-    assert staging["schema"] == "sample_product__pe__staging" and staging["alias"] == "stg_tpch__orders"
-    published = models["model.sample_product.customers.v1"]
-    assert published["schema"] == "sample_product__pe__v1" and published["alias"] == "customers"
+    models = [n for n in nodes.values()
+              if n["resource_type"] == "model" and n["package_name"] == PRODUCT]
+    # Whatever the product's models are: a staging model, and a version of a published one.
+    staging = next(n for n in models if n["config"]["schema"] == "staging")
+    assert staging["schema"] == f"{PRODUCT}__pe__staging" and staging["alias"] == staging["name"]
+    published = next(n for n in models if n["config"]["schema"] == "published")
+    assert published["version"] is not None
+    assert published["schema"] == f"{PRODUCT}__pe__v{published['version']}"
+    assert published["alias"] == published["name"]  # plain name, no `_vN`
 
 
 # Run dbt in-process with the Databricks adapter's `execute` replaced, so macros that
@@ -153,12 +158,13 @@ def test_databricks_contracts_keep_the_adapters_not_null(tmp_path):
     project.mkdir()
     for name in ("dbt_project.yml", "packages.yml"):
         shutil.copy(REPO_ROOT / name, project / name)
-    for name in ("macros", "models"):
-        shutil.copytree(REPO_ROOT / name, project / name)
+    for name in ("macros", "models", "seeds", "snapshots"):
+        if (REPO_ROOT / name).is_dir():
+            shutil.copytree(REPO_ROOT / name, project / name)
     shutil.copytree(REPO_ROOT / "tools" / "dbt_platform", project / "dbt_packages" / "dbt_platform",
                     ignore=shutil.ignore_patterns("target", "logs"))
     (project / "macros" / "probe_not_null.sql").write_text(NOT_NULL_PROBE)
-    (tmp_path / "profiles.yml").write_text(devenv.render_profile("sample_product", "pe", CONFIG))
+    (tmp_path / "profiles.yml").write_text(devenv.render_profile(PRODUCT, "pe", CONFIG))
 
     result = subprocess.run(
         [sys.executable, "-c", PRINT_SQL_RUNNER, "-q", "run-operation", "probe_not_null",
