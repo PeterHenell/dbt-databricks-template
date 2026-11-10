@@ -20,8 +20,11 @@
     "source=dbt-databricks-venv-${devcontainerId},target=/home/vscode/venv,type=volume"
   ],
   // OAuth (U2M) callback of `databricks auth login` and of dbt-databricks.
-  "forwardPorts": [8020],
-  "portsAttributes": { "8020": { "label": "Databricks OAuth callback", "onAutoForward": "silent" } },
+  "forwardPorts": [8020, 8080],
+  "portsAttributes": {
+    "8020": { "label": "Databricks OAuth callback", "onAutoForward": "silent" },
+    "8080": { "label": "dbt docs (make docs)", "onAutoForward": "notify" }
+  },
   "postCreateCommand": "uv sync --locked",
   "customizations": {
     "vscode": {

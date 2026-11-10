@@ -34,7 +34,15 @@ Where things live:
 | Product dev | product dev catalog, `<layer>` | the release pipeline (product dev identity) |
 | Product prod | product prod catalog, `<layer>` | the prod job on its schedule (product prod identity) |
 
-**Changing a diagram:** the sources are the `.puml` files in [`diagrams/`](diagrams/), and this page shows the committed `.svg` next to each (GitHub and many GitLab instances don't render PlantUML in Markdown). Edit the `.puml` file, run `make diagrams` on the host (Podman or Docker), and commit both files. In the source, `~` before `__` or `--` stops PlantUML from reading them as underline or strikethrough; it isn't shown in the rendered diagram.
+**Changing a diagram:** the sources are the `.puml` files in [`diagrams/`](diagrams/), and this page shows the committed `.svg` next to each (GitHub and many GitLab instances don't render PlantUML in Markdown). Edit the `.puml` file, render the SVGs on the host (needs Podman or Docker; with Docker, use `docker` and `--user "$(id -u):$(id -g)"` instead of `--userns=keep-id`), and commit both files:
+
+```sh
+podman run --rm --userns=keep-id -e JAVA_TOOL_OPTIONS=-Duser.home=/tmp \
+  -v "$PWD/docs/diagrams:/data:Z" docker.io/plantuml/plantuml:1.2025.4 \
+  -tsvg -charset UTF-8 "/data/*.puml"
+```
+
+In the source, `~` before `__` or `--` stops PlantUML from reading them as underline or strikethrough; it isn't shown in the rendered diagram.
 
 ---
 
@@ -46,7 +54,7 @@ You need: access to the dev workspace, and the team catalog (ask the platform te
 2. **Log in the Databricks CLI** with your own account. `make setup` uses this login to look up your name and later to download the product dev manifest.
 3. **`make setup`**: installs the locked Python packages, checks the login, suggests a **developer alias** (two letters of your first and last name), and writes the gitignored `./profiles.yml` with `schema: <product>__<alias>` in the team catalog. Then `dbt deps`.
 4. **`make clone-sources`**: shallow clones of every source into your own `…__src_clone` schema. By default your builds read these, not prod.
-5. **`uv run dbt build`**: builds and tests everything into your personal environment. The first dbt command opens a browser for dbt's own OAuth login.
+5. **`make build`** (`dbt build`): builds and tests everything into your personal environment. The first dbt command opens a browser for dbt's own OAuth login.
 
 Nothing you run can write outside `<product>__<alias>*`: the schema name always comes from your profile ([`generate_schema_name.sql`](../tools/dbt_platform/macros/generate_schema_name.sql) in the platform package). `make clean-dev` drops the whole environment when you want to start over.
 
@@ -61,7 +69,7 @@ Source: [`diagrams/workflow-0-setup.puml`](diagrams/workflow-0-setup.puml)
 The inner loop runs in your personal environment; the MR pipeline is the gate. **A green MR means the coding is done** (ADR 0007): merging deploys nothing.
 
 1. **Branch** from an up-to-date `main`.
-2. **Change models** and build only what you need: `uv run dbt build --select <model>+` or `+<model>`, or `make build-changed`, which builds only what you changed (`state:modified+`) and reads everything unchanged from product dev (needs a release in product dev first).
+2. **Change models** and build only what you need: `make build SELECT=<model>+` or `SELECT=+<model>` (`make run`, `make test` and `make compile` take the same options), or `make build-changed`, which builds only what you changed (`state:modified+`) and reads everything unchanged from product dev (needs a release in product dev first).
 3. **Check before pushing**: `make lint parse` (sqlfluff, yamllint, offline `dbt parse` with the deploy profile) and, if you touched `tools/dbtp/`, macros, the bundle or CI, `make test-tooling`.
 4. **Push and open a merge request.** The pipeline runs the static checks and then the **MR build**: it drops `<product>__mr__*` and builds the whole project into it from prod sources, as the team identity. MR builds run one at a time (`resource_group: mr-build`), so a second MR waits for the first.
 5. **Review and merge.** The `main` pipeline runs the static checks again. Nothing is deployed.

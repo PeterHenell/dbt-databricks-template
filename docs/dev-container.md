@@ -11,7 +11,7 @@ Developers may be on macOS, Linux or Windows. The toolkit (`make`, the `dbtp` to
 
 1. Clone the repository and open it in VS Code.
 2. Run **Dev Containers: Reopen in Container**. The first build takes a few minutes; it then runs `uv sync --locked`.
-3. In the container's terminal: `make setup`, then `uv run dbt build` (see CLAUDE.md for the commands).
+3. In the container's terminal: `make setup`, then `make build` (`make help` lists the commands).
 
 ## What's in it
 
@@ -19,6 +19,7 @@ Developers may be on macOS, Linux or Windows. The toolkit (`make`, the `dbtp` to
 - The virtual environment is at `/home/vscode/venv`, outside the workspace, so it never clashes with a `.venv` made on your host.
 - Login tokens (`~/.databricks`, `~/.config/databricks-sdk-py`) are on named Docker volumes: they survive rebuilds and are never written to the workspace or the image.
 - Port 8020 is forwarded: it's where `databricks auth login` and dbt-databricks receive the OAuth callback. VS Code opens the sign-in page in your host browser.
+- Port 8080 is forwarded for the dbt docs site (`make docs`).
 - `.gitattributes` keeps LF line endings in Windows checkouts, which the Makefile needs.
 
 ## Upgrading tools

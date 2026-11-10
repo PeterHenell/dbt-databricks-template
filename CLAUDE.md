@@ -28,19 +28,22 @@ The supported way to run the toolkit is the dev container (`.devcontainer/`, see
 ```sh
 make setup                                    # uv sync, check Databricks CLI login, write ./profiles.yml, dbt deps
 make clone-sources                            # (re)create your shallow clones of the sources (default source mode: clone)
-uv run dbt build                              # build + test everything into your personal environment
-uv run dbt build --select customers           # one model (all versions) and its tests
-uv run dbt build --select +customers          # a model and everything upstream
-uv run dbt test --select stg_tpch__orders     # tests of one model
-uv run dbt build --vars '{dev_source_mode: prod}'   # read prod sources directly for this run
+make build                                    # dbt build: build + test everything into your personal environment
+make build SELECT=customers                   # one model (all versions) and its tests
+make build SELECT=+customers                  # a model and everything upstream
+make test SELECT=stg_tpch__orders             # tests of one model (also: make run, make compile)
+make build SOURCE_MODE=prod                   # read prod sources directly for this run (dev_source_mode)
+make build ARGS="--full-refresh"              # ARGS goes to dbt as is; `uv run dbt …` works too (same profile)
+make debug                                    # dbt debug: profile + warehouse connection; make docs serves the docs on :8080
 make build-changed                            # deferred build: only state:modified+, rest from product dev
 make clean-dev                                # drop your whole personal environment (asks first)
 make test-tooling                             # pytest: tools/dbtp/tests + tests/ (macros, bundle, CI config; no Databricks needed)
-uv run dbtp --help                            # the tooling the Makefile forwards to
-uv run dbt parse                              # offline check of the project (no connection needed)
 make lint parse                               # sqlfluff + yamllint; offline dbt parse with the deploy profile
-make artifact bundle-deploy bundle-run TARGET=dev   # hand deploy + run in product dev (normally the release pipeline does this)
+uv run dbtp --help                            # the tooling; CI-only and rare commands (release, bundle, mr-build) are only here
+uv run dbtp release build && uv run dbtp bundle deploy -t dev && uv run dbtp bundle run -t dev   # hand deploy + run in product dev (normally the release pipeline does this)
 ```
+
+The Makefile holds only the developer's daily commands (personal environment, checks, local engine). CI-only steps are called as `uv run dbtp …` from `.gitlab-ci.yml`, rarely used commands (hand deploy, rendering the diagrams) are in the docs. Don't add CI or one-off targets back.
 
 Prod-style builds use the committed deployment profile and only with `--profiles-dir deploy`: env vars `DBT_HOST` and `DBT_ACCESS_TOKEN`, plus `--vars '{deploy_catalog: …, deploy_warehouse_id: …}'`. Targets: `prod` (the job; plain `<layer>` schemas) and `mr` (MR builds; `<product>__mr__<layer>`).
 
@@ -49,9 +52,9 @@ Prod-style builds use the committed deployment profile and only with `--profiles
 Details in `docs/ci-cd.md`; the adoption guide is `README.md`.
 
 - **Databricks Asset Bundle** (`databricks.yml`, `resources/dbt_job.yml`): one job, a `dbt_build` task (serverless environment, models run on the SQL warehouse) followed by `publish_dbt_artifacts` (`tools/dbtp/src/dbtp/jobs/publish_dbt_artifacts.py`, standalone, SDK only, writes `manifest.json`/`run_results.json` to `/Volumes/<catalog>/_dbt_artifacts/state/{runs/<run_id>,latest}/` only after a successful build). Targets: `dev` (product dev catalog, no schedule) and `prod` (product prod catalog, cron). Environment-specific values live only in the targets. The job runs as the target's product identity. Job environment pins must match `uv.lock` (tested).
-- **Release artifact** (`dbtp release`): tracked bundle/dbt files + installed `dbt_packages/` + `RELEASE.json`; built once per tag into GitLab's generic package registry; every deploy (CI or `make bundle-deploy`) goes from the unpacked artifact in `target/release/bundle/`.
-- **GitLab** (`.gitlab-ci.yml`, jobs only call `make`): MR → static checks + `mr-build` (`dbtp mr-build`: drop `<product>__mr__*`, full `dbt build --target mr`, team identity, `resource_group: mr-build`); `main` → static checks only; release tag → `release-check` → `release-artifact` → `product-dev` (deploy + run) → `validate-prod` → manual `deploy-prod` (no run). The team identity logs in with OIDC (`subject_claim: project_path`); the product identities default to client ID + secret in protected variables, because a federation policy can't be limited to release tags.
-- CI tools: `make ci-tools` installs uv and the Databricks CLI at the versions in `.devcontainer/Dockerfile` (`tools/dbtp/src/dbtp/ci_tools.py`, plain `python3`).
+- **Release artifact** (`dbtp release`): tracked bundle/dbt files + installed `dbt_packages/` + `RELEASE.json`; built once per tag into GitLab's generic package registry; every deploy (CI or a hand `dbtp bundle deploy`) goes from the unpacked artifact in `target/release/bundle/`.
+- **GitLab** (`.gitlab-ci.yml`; jobs call only the `make` checks (`lint parse`, `test-tooling`) or `uv run dbtp …`, tested in `tests/test_bundle.py`): MR → static checks + `mr-build` (`dbtp mr-build`: drop `<product>__mr__*`, full `dbt build --target mr`, team identity, `resource_group: mr-build`); `main` → static checks only; release tag → `release-check` → `release-artifact` → `product-dev` (deploy + run) → `validate-prod` → manual `deploy-prod` (no run). The team identity logs in with OIDC (`subject_claim: project_path`); the product identities default to client ID + secret in protected variables, because a federation policy can't be limited to release tags.
+- CI tools: the `.tooling` job template runs `python3 tools/dbtp/src/dbtp/ci_tools.py` (uv and the Databricks CLI at the versions in `.devcontainer/Dockerfile`, into `$CI_TOOLS_DIR`), puts `$CI_TOOLS_DIR` on `PATH`, then `uv sync --locked`.
 
 ### Local engine (no Databricks)
 

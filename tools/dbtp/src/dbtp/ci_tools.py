@@ -1,4 +1,4 @@
-"""`make ci-tools`: install uv and the Databricks CLI in a standard Python CI image.
+"""Install uv and the Databricks CLI in a standard Python CI image.
 
 At the versions pinned in `.devcontainer/Dockerfile` (one place for both). Binaries go
 to `$CI_TOOLS_DIR` (cached between pipelines); Python packages come from uv.lock.

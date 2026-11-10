@@ -11,8 +11,9 @@ the repository it works on at run time.
 ## How a product repository uses it
 
 - `pyproject.toml` depends on `dbtp`; `uv sync` installs it with dbt.
-- The `Makefile` only forwards to it (`make setup` runs `dbtp setup`), so
-  developers and CI keep typing `make …`.
+- The `Makefile` has the developer's daily commands and forwards to it (`make setup`
+  runs `dbtp setup`). The CI pipeline calls the CI-only commands (`release …`,
+  `bundle …`, `mr-build`) as `uv run dbtp …` directly.
 - `dbtp` works on the nearest directory upwards from the working directory that
   has a `dbt_project.yml`. `--project-dir` or `$DBTP_PROJECT_DIR` override that.
 

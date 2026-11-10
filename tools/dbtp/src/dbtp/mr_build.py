@@ -1,4 +1,4 @@
-"""`dbtp mr-build` (`make ci-mr-build`), the MR build (ADR 0009): drop `<product>__mr__*`, then a full `dbt build` into it.
+"""`dbtp mr-build`, the MR build (called by .gitlab-ci.yml) (ADR 0009): drop `<product>__mr__*`, then a full `dbt build` into it.
 
 Runs in the MR pipeline as the team identity, in the team catalog of the dev
 workspace (`config/dev-environment.toml`), with target `mr` of deploy/profiles.yml.

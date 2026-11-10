@@ -12,7 +12,7 @@ note right
   rollback deployments" enabled
 end note
 |GitLab CI|
-:deploy-prod  (""make ci-release-fetch bundle-deploy TARGET=prod"");
+:deploy-prod  (""dbtp release fetch"", ""bundle deploy -t prod"");
 note right
   Downloads the stored
   sample_product-v1.4.0.tar.gz

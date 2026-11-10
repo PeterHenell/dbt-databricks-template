@@ -8,7 +8,7 @@ logs/
 .user.yml
 
 # Python / uv
-# CI cache: uv packages and the pinned tools (make ci-tools)
+# CI cache: uv packages and the pinned tools (ci_tools.py in .gitlab-ci.yml)
 .cache/
 .venv/
 __pycache__/

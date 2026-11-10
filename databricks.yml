@@ -5,7 +5,7 @@
 # warehouse and identity at deploy time. Replace the <placeholders> when you create a
 # repository from the template; `dev` must agree with config/dev-environment.toml.
 #
-#   make bundle-validate TARGET=dev     make bundle-deploy TARGET=dev     make bundle-run TARGET=dev
+#   uv run dbtp bundle validate -t dev    uv run dbtp bundle deploy -t dev    uv run dbtp bundle run -t dev
 bundle:
   # Must equal the dbt project name (dbt_project.yml), i.e. the data product name.
   name: sample_product
@@ -13,7 +13,7 @@ bundle:
 include:
   - resources/*.yml
 
-# Deploy from the unpacked release artifact (`make artifact`, `dbtp release build`), not
+# Deploy from the unpacked release artifact (`uv run dbtp release build`), not
 # from the repository: it holds only what the job needs. Installed dbt packages are
 # part of it (ADR 0008) and the job never runs `dbt deps`, but git ignores them, so
 # include them explicitly. (Without packages the CLI warns that the pattern matches

@@ -6,12 +6,12 @@ start
 :GitLab: Deploy > Releases > **New release**
 tag ""v1.4.0"" on a main commit;
 |GitLab CI|
-:release-check  (""make ci-release-check"");
+:release-check  (""dbtp release check-tag"");
 note right
   Tag is a valid package version,
   its commit is on main
 end note
-:release-artifact  (""make ci-release-artifact"");
+:release-artifact  (""dbtp release publish"");
 note right
   ""dbt deps"", then the archive
   **sample_product-v1.4.0.tar.gz**
@@ -19,7 +19,7 @@ note right
   macros/, dbt_packages/, RELEASE.json)
   stored once in the package registry
 end note
-:product-dev  (""make ci-release-fetch bundle-deploy bundle-run TARGET=dev"")
+:product-dev  (""dbtp release fetch"", ""bundle deploy"", ""bundle run"")
 as the product dev identity;
 |Databricks (dev workspace)|
 :""bundle deploy -t dev"";
@@ -46,12 +46,12 @@ if (Product dev run green?) then (no)
   stop
 else (yes)
 endif
-:validate-prod  (""make bundle-validate TARGET=prod"")
+:validate-prod  (""dbtp bundle validate -t prod"")
 same archive, product prod identity;
 |Release manager|
 :Approve (Premium/Ultimate) and start **deploy-prod**;
 |GitLab CI|
-:deploy-prod  (""make ci-release-fetch bundle-deploy TARGET=prod"");
+:deploy-prod  (""dbtp release fetch"", ""bundle deploy -t prod"");
 |Databricks (prod workspace)|
 :""bundle deploy -t prod"";
 note right

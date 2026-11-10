@@ -1,5 +1,6 @@
 # GitLab CI/CD for this data product (docs/ci-cd.md; ADRs 0006-0009).
-# Every job only calls `make` targets, which forward to the dbtp tooling (tools/dbtp/).
+# No logic here: the checks a developer also runs call `make` (lint, parse, test-tooling);
+# the CI-only steps call the dbtp tooling (tools/dbtp/) directly, `uv run dbtp …`.
 #
 #   merge request  static checks, security scans, MR full build (team identity)
 #   main           static checks, security scans. Nothing is deployed (ADR 0007).
@@ -48,7 +49,8 @@ variables:
 
 # ---- Building blocks ----
 
-# Standard Python image; pinned uv and Databricks CLI from `make ci-tools` (cached).
+# Standard Python image; uv and the Databricks CLI at the versions pinned in
+# .devcontainer/Dockerfile (installed into $CI_TOOLS_DIR, cached), then the locked packages.
 .tooling:
   image: python:3.12-bookworm
   cache:
@@ -60,7 +62,9 @@ variables:
       - .cache/uv
       - .cache/tools
   before_script:
-    - make ci-tools
+    - python3 tools/dbtp/src/dbtp/ci_tools.py
+    - export PATH="$CI_TOOLS_DIR:$PATH"
+    - uv sync --locked
 
 # The GitLab ID token that Databricks exchanges for an OAuth token (env-oidc).
 .databricks-login:
@@ -116,13 +120,10 @@ bundle-validate:
   extends: [.tooling, .static-rules, .as-team]
   stage: test
   script:
-    - make bundle-validate TARGET=dev
+    - uv run dbtp bundle validate -t dev
 
-security-scan:
-  extends: [.tooling, .static-rules]
-  stage: test
-  script:
-    - make security-scan
+# More scanners: add their jobs here (GitLab's SAST and secret detection come from
+# the templates included above; dependency scanning needs Ultimate).
 
 # ---- MR: full build into <product>__mr__* (ADR 0009) ----
 
@@ -134,7 +135,7 @@ mr-build:
   # One MR build at a time: they all share the same schemas.
   resource_group: mr-build
   script:
-    - make ci-mr-build
+    - uv run dbtp mr-build
 
 # ---- Release: started by a GitLab release (its tag) on a main commit ----
 
@@ -144,14 +145,14 @@ release-check:
   variables:
     GIT_DEPTH: "0"  # the "is the tag on main" check needs history
   script:
-    - make ci-release-check
+    - uv run dbtp release check-tag
 
 release-artifact:
   extends: [.tooling, .release-rules]
   stage: release
   needs: [release-check]
   script:
-    - make ci-release-artifact
+    - uv run dbtp release publish
 
 product-dev:
   extends: [.tooling, .release-rules, .as-product-dev]
@@ -163,14 +164,17 @@ product-dev:
     deployment_tier: testing
   # The product dev job run is the release's test: a failed run fails the pipeline.
   script:
-    - make ci-release-fetch bundle-deploy bundle-run TARGET=dev
+    - uv run dbtp release fetch
+    - uv run dbtp bundle deploy -t dev
+    - uv run dbtp bundle run -t dev
 
 validate-prod:
   extends: [.tooling, .release-rules, .as-product-prod]
   stage: prod
   needs: [product-dev]
   script:
-    - make ci-release-fetch bundle-validate TARGET=prod BUNDLE_DIR=target/release/bundle
+    - uv run dbtp release fetch
+    - uv run dbtp bundle validate -t prod --dir target/release/bundle
 
 # Manual. Deploys the same archive; starts no run, the prod schedule takes over.
 # Rollback: re-run this job in an earlier release's pipeline (docs/ci-cd.md).
@@ -187,4 +191,5 @@ deploy-prod:
     name: prod
     deployment_tier: production
   script:
-    - make ci-release-fetch bundle-deploy TARGET=prod
+    - uv run dbtp release fetch
+    - uv run dbtp bundle deploy -t prod

@@ -8,7 +8,7 @@ start
 repeat
   :Edit models/, macros/, YAML;
   if (Build what?) then (a model and its neighbours)
-    :""uv run dbt build ~--select +customers+"";
+    :""make build SELECT=+customers+"";
   else (only what changed)
     :""make build-changed"";
     note right
@@ -43,7 +43,7 @@ fork again
 fork again
   :SAST, secret detection;
 end fork
-:mr-build  (""make ci-mr-build"", one MR at a time);
+:mr-build  (""dbtp mr-build"", one MR at a time);
 |Databricks (dev workspace)|
 :Drop sample_product~__mr~__*;
 :Full ""dbt build ~--target mr"" from prod sources;

@@ -16,7 +16,7 @@ How this data product is deployed to Databricks and what the GitLab pipelines do
 | `dbtp bundle` (`tools/dbtp/src/dbtp/bundle.py`) | Validates, deploys and runs the bundle; deploys only from the unpacked artifact. |
 | `tools/dbtp/src/dbtp/jobs/publish_dbt_artifacts.py` | Runs inside the job and publishes the dbt artifacts. Shipped in the artifact; needs only the Databricks SDK. |
 | `tools/dbtp/src/dbtp/ci_tools.py` | Installs uv and the Databricks CLI in CI, at the versions pinned in `.devcontainer/Dockerfile` (standard library only, runs before uv exists). |
-| `.gitlab-ci.yml` | The pipelines. Every job only calls `make` targets, which forward to `dbtp`. |
+| `.gitlab-ci.yml` | The pipelines. The static checks call the same `make` targets developers run (`lint`, `parse`, `test-tooling`); every CI-only step calls `uv run dbtp …` directly. No logic in the pipeline file. |
 
 ## The job
 
@@ -45,20 +45,23 @@ It writes `runs/` first, then `latest/`. A failed dbt task skips the publish tas
 
 The bundle creates and owns the `_dbt_artifacts` schema and the `state` volume. If the schema already exists (for example, created by hand), the first deploy fails: drop the schema, or remove it from `resources/dbt_job.yml`.
 
-## Make targets
+## Deployment commands
+
+The pipeline calls these; they aren't in the Makefile, which only has the developer's daily commands. Run them yourself only for a hand deploy:
 
 ```sh
-make artifact [VERSION=local]          # dbt deps + build target/release/<product>-<version>.tar.gz, unpack to target/release/bundle/
-make bundle-validate TARGET=dev|prod   # validate (from the repo; BUNDLE_DIR=target/release/bundle for the artifact)
-make bundle-deploy TARGET=dev|prod     # deploy the unpacked artifact
-make bundle-run TARGET=dev|prod        # start the job and wait; fails if the run fails
-make lint parse                        # sqlfluff + yamllint, offline dbt parse with the deploy profile
+uv run dbtp release build [--version local]          # dbt deps + build target/release/<product>-<version>.tar.gz, unpack to target/release/bundle/
+uv run dbtp bundle validate -t dev|prod [--dir target/release/bundle]   # validate (from the repo, or the unpacked artifact)
+uv run dbtp bundle deploy -t dev|prod                # deploy the unpacked artifact
+uv run dbtp bundle run -t dev|prod                   # start the job and wait; fails if the run fails
+uv run dbtp release check-tag | publish | fetch      # CI only: check the release tag, store the artifact once, download it
+uv run dbtp mr-build                                 # CI only: the MR build (below)
 ```
 
 Deploys always go from the unpacked artifact, so a hand deploy ships exactly what a release ships. To deploy and run in product dev by hand (needs `databricks auth login --host <dev workspace>` and permission to use the product dev identity):
 
 ```sh
-make artifact bundle-deploy bundle-run TARGET=dev
+uv run dbtp release build && uv run dbtp bundle deploy -t dev && uv run dbtp bundle run -t dev
 ```
 
 Releases do this through the pipeline. Only do it by hand when the pipeline itself is broken, and don't deploy to prod by hand.
@@ -67,13 +70,13 @@ Releases do this through the pipeline. Only do it by hand when the pipeline itse
 
 | Pipeline | Jobs | Identity |
 |---|---|---|
-| Merge request | `lint` (sqlfluff, yamllint, `dbt parse`), `tooling-tests`, `bundle-validate` (target `dev`), `security-scan`, GitLab SAST and secret detection, then `mr-build` | team |
+| Merge request | `lint` (`make lint parse`: sqlfluff, yamllint, `dbt parse`), `tooling-tests` (`make test-tooling`), `bundle-validate` (target `dev`), GitLab SAST and secret detection, then `mr-build` | team |
 | `main` | The same static checks, without `mr-build`. **Nothing is deployed** (ADR 0007). | team |
 | Release tag | `release-check` → `release-artifact` → `product-dev` → `validate-prod` → manual `deploy-prod` | product dev, then product prod |
 
 ### MR build (ADR 0009)
 
-`make ci-mr-build` runs `dbtp mr-build`:
+The `mr-build` job runs `uv run dbtp mr-build`:
 
 1. It takes the team's dev workspace, team catalog and warehouse from `config/dev-environment.toml`.
 2. It gets an OAuth token for the CI login and hands it to dbt as `DBT_ACCESS_TOKEN`.
@@ -159,14 +162,14 @@ Any identity can switch login type through the project CI/CD variables `TEAM_AUT
 
 ## Security scans
 
-`.gitlab-ci.yml` includes GitLab's SAST and secret detection templates, which are available on every tier. Dependency scanning needs Ultimate; add `Jobs/Dependency-Scanning.gitlab-ci.yml` if you have it. `make security-scan` is a placeholder for any other scanner.
+`.gitlab-ci.yml` includes GitLab's SAST and secret detection templates, which are available on every tier. Dependency scanning needs Ultimate; add `Jobs/Dependency-Scanning.gitlab-ci.yml` if you have it. Add other scanners as jobs in stage `test` (there's a comment where they go).
 
 ## Testing without Databricks
 
 `make test-tooling` covers the deployment code offline:
 
 - `tests/test_bundle.py`:
-  - consistency checks (bundle name = product, pins = `uv.lock`, `dev` target = `config/dev-environment.toml`, only `prod` scheduled, CI jobs only call `make`);
+  - consistency checks (bundle name = product, pins = `uv.lock`, `dev` target = `config/dev-environment.toml`, only `prod` scheduled, CI jobs only call the `make` checks or `dbtp`, and those `make` targets exist);
   - schema names of both deploy-profile targets (`dbt ls`);
   - `databricks bundle validate` for `dev` and `prod` against a fake workspace API (`tests/mock_databricks.py`) on a copy with the placeholders filled in. That test is skipped if the CLI isn't installed.
 - `tests/test_release.py`: tag rule, artifact contents and reproducibility, write-once logic against a fake GitLab package API, the "on `main`" check.
@@ -182,4 +185,4 @@ These were checked only against documentation or a fake, and need a first real r
 - **Bundle-owned schema and volume:** the permissions the product identities need for them.
 - **OIDC:** the `project_path` subject claim for GitLab (the Databricks docs only show the default `sub`), and the `issuer` value for a self-managed GitLab.
 - **GitLab:** `id_tokens` `aud` from a CI variable, the registry upload with `CI_JOB_TOKEN`, `resource_group` behaviour, protected environments on your tier.
-- **The MR build** against a real team catalog (`make ci-mr-build`).
+- **The MR build** against a real team catalog (`dbtp mr-build`).

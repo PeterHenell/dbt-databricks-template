@@ -52,13 +52,17 @@ make setup              # tools, Databricks login, your profiles.yml (asks for y
 Then:
 
 ```sh
-make clone-sources                         # personal shallow clones of the sources (default source mode: clone)
-uv run dbt build                           # build + test into your personal environment
-uv run dbt build --select +customers       # part of the graph
-uv run dbt build --vars '{dev_source_mode: prod}'   # read prod sources directly for one run
-make build-changed                         # deferred build: only what you changed; the rest from product dev
-make clean-dev                             # drop your whole personal environment
+make clone-sources                # personal shallow clones of the sources (default source mode: clone)
+make build                        # dbt build: build + test everything into your personal environment
+make build SELECT=+customers      # part of the graph (also: make run, make test, make compile)
+make build SOURCE_MODE=prod       # read prod sources directly for one run
+make build-changed                # deferred build: only what you changed; the rest from product dev
+make lint parse                   # before you push: sqlfluff, yamllint, offline dbt parse
+make clean-dev                    # drop your whole personal environment
+make help                         # all targets
 ```
+
+The dbt targets pass `ARGS="..."` on to dbt (`make build ARGS="--full-refresh"`); for anything else, run `uv run dbt …` directly, it uses the same profile.
 
 - Your personal environment is the set of schemas `<product>__<alias>__<layer>` in the team catalog. Nothing you run can write anywhere else.
 - **Source modes:** `clone` (default) reads your shallow clones, `prod` reads prod directly. Run `make clone-sources` again when prod data has moved on, or when a clone breaks after a prod `VACUUM`.
@@ -93,8 +97,8 @@ Product dev always holds the latest release candidate and prod the latest approv
 | `config/dev-environment.toml` | Team settings for personal environments |
 | `databricks.yml`, `resources/` | The Databricks Asset Bundle (the job) |
 | `deploy/profiles.yml` | Deployment profile, only used with `--profiles-dir deploy` |
-| `.gitlab-ci.yml` | The pipelines (they only call `make` targets) |
-| `Makefile`, `tools/dbtp/` | Developer and CI tooling: the `dbtp` package, and a Makefile that forwards to it (`make help`, `uv run dbtp --help`) |
+| `.gitlab-ci.yml` | The pipelines (the `make` checks, and `uv run dbtp …` for the CI-only steps) |
+| `Makefile`, `tools/dbtp/` | Tooling: the `dbtp` package (`uv run dbtp --help`), and a Makefile with the developer's daily commands (`make help`) |
 | `local/` | The local Spark engine |
 | `tests/` | Tests of the project's macros, bundle, deploy profile and artifact (`make test-tooling`, which also runs `tools/dbtp/tests/`) |
 | `docs/` | Guides and ADRs |
