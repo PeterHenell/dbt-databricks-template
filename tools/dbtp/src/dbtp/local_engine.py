@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import time
 from collections.abc import Mapping
+from pathlib import Path
 
 from dbtp import devenv
 from dbtp.devenv import Project, SetupError
@@ -63,9 +64,34 @@ def sources(project: Project) -> int:
     return _compose(project, "run", "--rm", "spark-sql", "-f", "/project/local/tpch.sql")
 
 
+def relative_package_links(project: Project) -> list[Path]:
+    """Make `dbt_packages/` symlinks that point into the repository relative.
+
+    `dbt deps` installs a `local:` package (e.g. the platform macros) as a symlink with
+    the absolute host path, which doesn't exist inside the container (the repository is
+    mounted at /project). A relative link works on both sides. Returns the links changed.
+    """
+    changed = []
+    packages = project.root / "dbt_packages"
+    if not packages.is_dir():
+        return changed
+    for link in sorted(packages.iterdir()):
+        if not link.is_symlink() or not os.path.isabs(os.readlink(link)):
+            continue
+        target = link.resolve()
+        if not target.is_relative_to(project.root):
+            continue
+        link.unlink()
+        link.symlink_to(os.path.relpath(target, link.parent), target_is_directory=True)
+        changed.append(link)
+    return changed
+
+
 def dbt(project: Project, args: list[str]) -> int:
-    """Run dbt in the local engine (default `build`)."""
+    """Run dbt in the local engine (default `build`), after `dbt deps` on the host."""
     up(project)
+    _check(devenv.run(["dbt", "deps"], project))
+    relative_package_links(project)
     return _compose(project, "run", "--rm", "dbt", *(args or ["build"]))
 
 

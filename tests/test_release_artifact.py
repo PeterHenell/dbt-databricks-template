@@ -26,3 +26,12 @@ def test_artifact_holds_the_deployable_project_only():
 def test_bundle_job_runs_the_shipped_script():
     job = (ROOT / "resources" / "dbt_job.yml").read_text()
     assert f"python_file: ../{release.JOB_SCRIPT}" in job
+
+
+def test_artifact_ships_the_platform_package_as_files():
+    # dbt deps (tests/conftest.py) installs the local package as a symlink; the job never
+    # runs dbt deps, so the artifact must carry the package's files.
+    files = release.installed_files(ROOT)
+    assert "dbt_packages/dbt_platform/dbt_project.yml" in files
+    assert "dbt_packages/dbt_platform/macros/source_modes.sql" in files
+    assert "macros/dbt_platform.sql" in release.tracked_files(ROOT)

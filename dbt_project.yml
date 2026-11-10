@@ -19,10 +19,10 @@ target-path: "target"
 clean-targets: ["target", "dbt_packages"]
 
 on-run-start:
-  - "{{ assert_published_models_are_versioned() }}"
+  - "{{ dbt_platform.assert_published_models_are_versioned() }}"
 
 vars:
-  # Where a personal environment reads sources from: prod | clone | sample (macros/source_modes.sql).
+  # Where a personal environment reads sources from: prod | clone | sample (dbt_platform: macros/source_modes.sql).
   # Prod and MR targets ignore it. Override per run: --vars '{dev_source_mode: prod}'.
   dev_source_mode: clone
   # Where the sources live in prod. Override per run with `--vars`, or per target
@@ -34,7 +34,7 @@ models:
   sample_product:
     # Delta is Databricks' default; stating it keeps the local Spark engine (local/) the same.
     +file_format: delta
-    # Each folder is one layer, stored in its own schema (see macros/generate_schema_name.sql).
+    # Each folder is one layer, stored in its own schema (see dbt_platform: macros/generate_schema_name.sql).
     staging:
       +schema: staging
       +materialized: view

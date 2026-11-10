@@ -48,7 +48,7 @@ You need: access to the dev workspace, and the team catalog (ask the platform te
 4. **`make clone-sources`**: shallow clones of every source into your own `…__src_clone` schema. By default your builds read these, not prod.
 5. **`uv run dbt build`**: builds and tests everything into your personal environment. The first dbt command opens a browser for dbt's own OAuth login.
 
-Nothing you run can write outside `<product>__<alias>*`: the schema name always comes from your profile ([`macros/generate_schema_name.sql`](../macros/generate_schema_name.sql)). `make clean-dev` drops the whole environment when you want to start over.
+Nothing you run can write outside `<product>__<alias>*`: the schema name always comes from your profile ([`generate_schema_name.sql`](../tools/dbt_platform/macros/generate_schema_name.sql) in the platform package). `make clean-dev` drops the whole environment when you want to start over.
 
 ![0. Set up your environment and run dbt](diagrams/workflow-0-setup.svg)
 

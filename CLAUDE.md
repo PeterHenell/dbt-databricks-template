@@ -17,7 +17,7 @@ Beyond those, the template should embody dbt best practices (project layering, n
 
 Personal development environments are built (`.scratch/dev-environment/`, tickets 01–06), but only verified offline and on the local Spark engine, not yet on a Databricks workspace. Deployment is built (`.scratch/ci-cd/`, tickets 01–07), but only verified offline: unit tests, `databricks bundle validate` against a fake workspace API (`tests/mock_databricks.py`), and the static CI jobs in the CI image. It has not run in GitLab or on Databricks; the list is in `docs/ci-cd.md`, "Not verified yet". Do not document conventions here until they exist in the repo.
 
-**Pending decision:** `.scratch/dev-environment/issues/07-central-platform-repository.md` (`needs-triage`) proposes moving the tooling (`tools/dbtp/`, the platform macros, `local/`, the dev container image, CI/CD and the bundle) into a central, versioned platform repository. It conflicts with ADR 0002 and with ci-cd#01, #03, #05, #07 and dev-environment#06; each of those carries a note. Read ticket 07's "For the agent picking this up" before working on any of them, and don't implement 07 until the user has answered its open questions. Exception, agreed with the user: the first step, packaging the tooling as the `dbtp` Python package inside this repo (`tools/dbtp/`, see 07's `## Comments`), is done; hosting it elsewhere is not.
+**Pending decision:** `.scratch/dev-environment/issues/07-central-platform-repository.md` (`needs-triage`) proposes moving the tooling (`tools/dbtp/`, the platform macros, `local/`, the dev container image, CI/CD and the bundle) into a central, versioned platform repository. It conflicts with ADR 0002 and with ci-cd#01, #03, #05, #07 and dev-environment#06; each of those carries a note. Read ticket 07's "For the agent picking this up" before working on any of them, and don't implement 07 until the user has answered its open questions. Exceptions, agreed with the user: packaging the tooling as the `dbtp` Python package inside this repo (`tools/dbtp/`) and the platform macros as the `dbt_platform` dbt package inside this repo (`tools/dbt_platform/`) are done (see 07's `## Comments`); hosting either elsewhere is not.
 
 **Not yet verified on Databricks** (details in each ticket's `## Comments`): the OAuth flows (`make setup`, dbt's browser login, inside the dev container), `make clean-dev`, `make clone-sources` (incl. whether `samples.tpch` can be shallow-cloned), `make build-changed` (needs a real ci-cd#02 job run first; the "no manifest" CLI error text is guessed), and opening the dev container in VS Code or Docker Desktop. Deviation to keep in mind: source views get a proxy view in the clone schema instead of resolving to the prod name (dev-environment#04).
 
@@ -64,32 +64,39 @@ make local-dbt ARGS="run-operation clone_sources"
 make local-sql                                # Spark SQL shell; make local-down / local-clean
 ```
 
-It has no Unity Catalog (schema.table only), so project code must not assume catalogs: sources set `database` only when `target.type == 'databricks'`, and adapter-specific macros use `adapter.dispatch` with `databricks__` / `spark__` variants (dbt-databricks dispatches `databricks__` before `spark__`, so `spark__` overrides in `macros/local_spark/` never affect Databricks). A green local build doesn't replace a Databricks build.
+It has no Unity Catalog (schema.table only), so project code must not assume catalogs: sources set `database` only when `target.type == 'databricks'`, and adapter-specific macros use `adapter.dispatch(name, 'dbt_platform')` with `databricks__` / `spark__` variants. Overriding a dbt/adapter macro for Spark is different: for namespace `dbt`, dbt searches the root project (every prefix) before dbt's own macros, so a root `spark__` override is also what Databricks reaches. The one we have (`spark__alter_column_set_constraints` in `macros/dbt_platform.sql`) hands non-Spark adapters back to their own macro; `tests/test_macros.py` checks Databricks still gets `SET NOT NULL`. A green local build doesn't replace a Databricks build.
 
 ## Tooling (`dbtp`)
 
 - All setup, dev-environment and deployment logic is the `dbtp` Python package in `tools/dbtp/` (README there). It is a uv workspace member, installed by `uv sync`; the root `pyproject.toml` depends on it. Every Makefile recipe forwards to `dbtp` or calls one tool directly; don't put logic back into the Makefile.
 - dbtp must stay movable to its own repository: it imports nothing from this repo and finds the project at run time (nearest `dbt_project.yml` upwards from cwd, or `--project-dir` / `$DBTP_PROJECT_DIR`). Its tests (`tools/dbtp/tests/`) build their own tiny projects; tests of this repo's files belong in `tests/`.
-- The local engine (`make local-*`) now runs `uv run dbtp` on the host, so the host needs uv as well as Podman or Docker.
+- The local engine (`make local-*`) now runs `uv run dbtp` on the host, so the host needs uv as well as Podman or Docker. `dbtp local dbt` runs `dbt deps` on the host first and makes the `dbt_packages/dbt_platform` symlink relative, so it resolves inside the container too.
+
+## Platform macros (`dbt_platform`)
+
+- The macros for schema/alias naming, source modes, environment cleanup, the published-version check and the local-Spark override are the `dbt_platform` dbt package in `tools/dbt_platform/` (README there), installed by `dbt deps` from `packages.yml` (`local:`). Like dbtp, it must stay movable to its own repository: no product names, only `project_name` and the root project's nodes.
+- The root project keeps one-line stubs in `macros/dbt_platform.sql` for the overrides dbt only takes from the root project (`generate_schema_name`, `generate_alias_name`, `source`, `spark__alter_column_set_constraints`); `on-run-start` calls `dbt_platform.assert_published_models_are_versioned()`. Put behaviour in the package, not the stubs.
+- Inside the package, call sibling macros with the `dbt_platform.` prefix (unprefixed calls fail when the caller is a root-project node).
+- Every dbt run needs `dbt deps` first (`make setup`, `make parse`, `dbtp mr-build`, `dbtp release build` and the `tests/` fixture do it). The release artifact copies the symlinked package into `dbt_packages/`.
 
 ## Developer isolation (how it works)
 
 - **Product name** = the dbt project `name` in `dbt_project.yml`; `profile` must repeat it (dbt can't read the profile name from a variable; `dbtp.devenv` checks they match).
 - **Team settings** (dev workspace host, shared SQL warehouse, team catalog) are committed in `config/dev-environment.toml`.
 - **`make setup`** (`dbtp setup`: `setup_dev.py`, helpers in `devenv.py`) checks `databricks auth token --host <host>`, suggests an alias from the user's name (SCIM `Me`, falling back to `git config user.name`), and writes the gitignored `./profiles.yml` with `schema: <product>__<alias>` in the team catalog, `auth_type: oauth`. dbt-databricks runs its own browser OAuth on the first dbt command; the CLI login is for the Makefile tooling.
-- **Schema names** come from one override, `macros/generate_schema_name.sql`: target `prod` (the deploy profile, used for product dev and product prod) → `<layer>`; any other target → `<target.schema>__<layer>`, i.e. `<product>__<alias>__<layer>`. Layers are set per model folder with `+schema` in `dbt_project.yml`.
-- **Sources** are located through project variables (`tpch_catalog`, `tpch_schema`), never hard-coded. `macros/source_modes.sql` overrides `source()`: on personal targets (`dev`, `local`) `dev_source_mode` (default `clone`) redirects to `<product>__<alias>__src_clone.<source>__<table>`; all other targets read prod. `make clone-sources` (`clone_sources` macro) makes the shallow clones; source views get a view in the clone schema that reads prod.
-- **`make clean-dev`** (`drop_personal_environment` in `macros/personal_environment.sql`) drops exactly `<product>__<alias>` and `<product>__<alias>__*`; it refuses target `prod` and the reserved alias `mr` (MR schemas, ADR 0009).
+- **Schema names** come from one override, `generate_schema_name` in the platform package (root stub in `macros/dbt_platform.sql`): target `prod` (the deploy profile, used for product dev and product prod) → `<layer>`; any other target → `<target.schema>__<layer>`, i.e. `<product>__<alias>__<layer>`. Layers are set per model folder with `+schema` in `dbt_project.yml`.
+- **Sources** are located through project variables (`tpch_catalog`, `tpch_schema`), never hard-coded. The platform package's `source_modes.sql` overrides `source()`: on personal targets (`dev`, `local`) `dev_source_mode` (default `clone`) redirects to `<product>__<alias>__src_clone.<source>__<table>`; all other targets read prod. `make clone-sources` (`clone_sources` macro) makes the shallow clones; source views get a view in the clone schema that reads prod.
+- **`make clean-dev`** (`drop_personal_environment` in the platform package's `personal_environment.sql`) drops exactly `<product>__<alias>` and `<product>__<alias>__*`; it refuses target `prod` and the reserved alias `mr` (MR schemas, ADR 0009).
 - **`make build-changed`** (`dbtp build-changed`) downloads `latest/manifest.json` from `/Volumes/<product_dev>/_dbt_artifacts/state` with the CLI login and runs `dbt build --select state:modified+ --defer --state target/product-dev-state`. Needs `[catalogs] product_dev` in `config/dev-environment.toml`.
 
 ## Project layout
 
 - `models/staging/<source>/` — one view per source table, renamed to conventions (`stg_<source>__<entity>`), sources declared in `_<source>__sources.yml`.
 - `models/intermediate/` — `int_` views.
-- `models/published/` — the published interface: versioned models (`<model>_vN.sql`) with enforced contracts, built into schema `vN` under the plain model name. `macros/generate_alias_name.sql` drops the `_vN` suffix; an unversioned published model fails on run start. How to add or retire a major version: `docs/published-interface.md`.
+- `models/published/` — the published interface: versioned models (`<model>_vN.sql`) with enforced contracts, built into schema `vN` under the plain model name. The platform package's `generate_alias_name` drops the `_vN` suffix; an unversioned published model fails on run start. How to add or retire a major version: `docs/published-interface.md`.
 - The sample source is Databricks' built-in `samples.tpch`; it stands in for a real product's sources (locally, `local/tpch.sql` creates a small copy).
 - All models are Delta (`+file_format: delta`).
-- `tests/` — pytest for this repo's own files: `test_macros.py` (runs macros through `dbt run-operation` offline), `test_bundle.py`, `test_release_artifact.py`. The tooling's tests are in `tools/dbtp/tests/`.
+- `tests/` — pytest for this repo's own files: `test_macros.py` (runs the platform macros through `dbt run-operation`/`dbt parse` offline), `test_bundle.py`, `test_release_artifact.py`. The tooling's tests are in `tools/dbtp/tests/`.
 
 ## Agent skills
 

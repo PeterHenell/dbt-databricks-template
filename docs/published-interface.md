@@ -7,9 +7,9 @@ The whole interface is versioned together (ADR 0003): a breaking change to **any
 ## How it is built
 
 - Models in `models/published/` use [dbt model versions](https://docs.getdbt.com/docs/mesh/govern/model-versions). Version N of a model lives in `<model>_vN.sql`.
-- `macros/generate_schema_name.sql` puts version N in layer `vN`; `macros/generate_alias_name.sql` keeps the plain model name.
+- The platform package's `generate_schema_name` puts version N in layer `vN`; its `generate_alias_name` keeps the plain model name (`tools/dbt_platform/macros/`, called from the stubs in `macros/dbt_platform.sql`).
 - Every published model has an enforced contract (`data_type` on every column).
-- A published model without `versions:` fails the run (`macros/assert_published_models_are_versioned.sql`, run on run start).
+- A published model without `versions:` fails the run (`tools/dbt_platform/macros/assert_published_models_are_versioned.sql`, run on run start).
 - `ref('customers')` resolves to the `latest_version`; pin an older one with `ref('customers', v=1)`.
 
 ## Adding a major version (N → N+1)

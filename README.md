@@ -88,7 +88,8 @@ Product dev always holds the latest release candidate and prod the latest approv
 
 | Path | What |
 |---|---|
-| `models/`, `macros/`, `dbt_project.yml` | The dbt project |
+| `models/`, `macros/`, `dbt_project.yml`, `packages.yml` | The dbt project (`macros/` holds only the stubs dbt needs in the root project) |
+| `tools/dbt_platform/` | The platform's dbt macros as a dbt package (schema naming, source modes, environment cleanup, local-Spark overrides), installed by `dbt deps` |
 | `config/dev-environment.toml` | Team settings for personal environments |
 | `databricks.yml`, `resources/` | The Databricks Asset Bundle (the job) |
 | `deploy/profiles.yml` | Deployment profile, only used with `--profiles-dir deploy` |

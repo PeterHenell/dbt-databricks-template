@@ -94,12 +94,22 @@ def tracked_files(root: Path) -> list[str]:
                   and (root / path).is_file())
 
 
+# Run output inside an installed package's own directory (e.g. a `local:` package
+# someone ran dbt in) is not package content.
+PACKAGE_RUN_OUTPUT = {"target", "logs", "dbt_packages"}
+
+
 def installed_files(root: Path) -> list[str]:
+    """Files under `dbt_packages/`. `dbt deps` installs a `local:` package as a symlink
+    (an absolute one), so links are followed and the artifact gets real copies."""
     files = []
     for top in INSTALLED:
         base = root / top
-        if base.is_dir():
-            files += [p.relative_to(root).as_posix() for p in base.rglob("*") if p.is_file()]
+        for dirpath, dirnames, filenames in os.walk(base, followlinks=True):
+            here = Path(dirpath)
+            if here.parent == base:  # a package's own directory
+                dirnames[:] = [d for d in dirnames if d not in PACKAGE_RUN_OUTPUT]
+            files += [(here / name).relative_to(root).as_posix() for name in filenames]
     return sorted(files)
 
 

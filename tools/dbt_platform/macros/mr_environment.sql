@@ -21,6 +21,6 @@
 
 {% macro drop_mr_environment(dry_run=true, schemas=none) %}
     {%- if execute -%}
-        {%- do drop_environment_schemas(mr_environment_schema(), dry_run, schemas) -%}
+        {%- do dbt_platform.drop_environment_schemas(dbt_platform.mr_environment_schema(), dry_run, schemas) -%}
     {%- endif -%}
 {% endmacro %}

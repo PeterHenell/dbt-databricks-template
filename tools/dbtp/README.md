@@ -29,7 +29,8 @@ What dbtp reads from the product repository:
 | `.devcontainer/Dockerfile` | `ci_tools.py` reads the uv and Databricks CLI version pins |
 
 The dbt macros the commands call (`clone_sources`, `drop_personal_environment`,
-`drop_mr_environment`) are still in the product repository's `macros/`.
+`drop_mr_environment`) are in the `dbt_platform` dbt package (`tools/dbt_platform/`),
+which the product repository installs with `dbt deps`.
 
 ## Commands
 
@@ -38,9 +39,9 @@ dbtp setup [--alias A] [--yes]       check the CLI login, write profiles.yml, db
 dbtp clone-sources                   (re)create your shallow source clones
 dbtp clean-dev                       drop your personal environment, after confirmation
 dbtp build-changed [-- DBT_ARGS]     state:modified+ build, deferring to product dev
-dbtp parse                           offline dbt parse with the deployment profile
+dbtp parse                           dbt deps, then offline dbt parse with the deployment profile
 dbtp local up|sources|sql|down|clean local Spark engine (containers, run on the host)
-dbtp local dbt [DBT_ARGS]            dbt in the local engine (default: build)
+dbtp local dbt [DBT_ARGS]            dbt in the local engine (default: build), after dbt deps on the host
 dbtp release build [--version V]     build and unpack the release artifact by hand
 dbtp release check-tag|publish|fetch CI: release pipeline steps
 dbtp bundle validate|deploy|run -t T Databricks Asset Bundle (deploys from the artifact)

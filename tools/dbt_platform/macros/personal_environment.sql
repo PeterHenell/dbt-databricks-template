@@ -42,7 +42,7 @@
 
 
 {% macro list_catalog_schemas(catalog) %}
-    {{- return(adapter.dispatch('list_catalog_schemas')(catalog)) -}}
+    {{- return(adapter.dispatch('list_catalog_schemas', 'dbt_platform')(catalog)) -}}
 {% endmacro %}
 
 {% macro databricks__list_catalog_schemas(catalog) %}
@@ -64,7 +64,7 @@
 #}
 {% macro drop_personal_environment(dry_run=true, schemas=none) %}
     {%- if execute -%}
-        {%- do drop_environment_schemas(personal_environment_schema(), dry_run, schemas) -%}
+        {%- do dbt_platform.drop_environment_schemas(dbt_platform.personal_environment_schema(), dry_run, schemas) -%}
     {%- endif -%}
 {% endmacro %}
 
@@ -78,8 +78,8 @@
     {%- if execute -%}
         {%- set catalog = target.database -%}  {#- none on the local Spark engine -#}
         {%- set where = 'catalog ' ~ catalog if catalog else 'the local catalog' -%}
-        {%- set all_schemas = schemas if schemas is not none else list_catalog_schemas(catalog) -%}
-        {%- set to_drop = select_personal_schemas(all_schemas, environment) -%}
+        {%- set all_schemas = schemas if schemas is not none else dbt_platform.list_catalog_schemas(catalog) -%}
+        {%- set to_drop = dbt_platform.select_personal_schemas(all_schemas, environment) -%}
 
         {%- if not to_drop -%}
             {%- do print("Nothing to drop: no schemas named " ~ environment ~ "__* in " ~ where ~ ".") -%}
