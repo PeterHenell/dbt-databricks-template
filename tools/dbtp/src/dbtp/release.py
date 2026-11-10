@@ -6,10 +6,10 @@ the installed `dbt_packages/`, `deploy/profiles.yml` and the job's helper script
 It is deployed unchanged to product dev and prod; the bundle target supplies hosts,
 catalogs, warehouses and identities.
 
-Commands (`dbtp release …`; the Makefile and .gitlab-ci.yml call them):
+Commands (`dbtp release …`; `build` by hand, the rest from .gitlab-ci.yml):
 
   build --version V   `dbt deps`, then build target/release/<product>-<V>.tar.gz and unpack it into
-                      target/release/bundle/ (what `make bundle-deploy` deploys)
+                      target/release/bundle/ (what `dbtp bundle deploy` deploys)
   check-tag           CI, release pipeline: the tag is a valid GitLab package version
                       and its commit is on the default branch
   publish             CI: reuse the archive in the GitLab generic package registry if

@@ -33,7 +33,7 @@ note right
   (no data copied)
 end note
 |Developer (dev container)|
-:""uv run dbt build"";
+:""make build"";
 note right
   First run: browser OAuth login for dbt
 end note

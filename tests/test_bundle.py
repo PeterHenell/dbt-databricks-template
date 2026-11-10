@@ -79,14 +79,30 @@ def test_deploy_profile_targets():
         assert "client_secret" not in output
 
 
-def test_gitlab_ci_jobs_only_call_make():
+# What a CI job may run: the developer checks through `make`, everything else through
+# the dbtp tooling. Logic belongs in dbtp, not in the pipeline file.
+CI_ALLOWED = ("make lint", "make parse", "make test-tooling", "uv run dbtp ", "uv sync --locked",
+              "python3 tools/dbtp/src/dbtp/ci_tools.py", 'export PATH="$CI_TOOLS_DIR:$PATH"')
+
+
+def test_gitlab_ci_jobs_only_call_the_tooling():
     ci = load(".gitlab-ci.yml")
     for name, job in ci.items():
         if not isinstance(job, dict):
             continue
         for key in ("before_script", "script", "after_script"):
             for line in job.get(key, []):
-                assert line.startswith("make "), f"{name}.{key}: {line!r} is not a make target"
+                assert line.startswith(CI_ALLOWED), f"{name}.{key}: {line!r} is not a make check or dbtp"
+
+
+def test_gitlab_ci_targets_exist_in_the_makefile():
+    makefile = (ROOT / "Makefile").read_text()
+    ci = load(".gitlab-ci.yml")
+    for job in ci.values():
+        for line in job.get("script", []) if isinstance(job, dict) else []:
+            if line.startswith("make "):
+                for target in line.split()[1:]:
+                    assert re.search(rf"^{re.escape(target)}:", makefile, re.M), target
 
 
 def test_gitlab_ci_resource_groups_and_manual_prod():
@@ -96,13 +112,13 @@ def test_gitlab_ci_resource_groups_and_manual_prod():
     assert ci["deploy-prod"]["resource_group"] == "product-prod"
     assert ci["deploy-prod"]["environment"]["name"] == "prod"
     assert ci["deploy-prod"]["rules"] == [{"if": "$CI_COMMIT_TAG", "when": "manual"}]
-    assert "bundle-run" not in " ".join(ci["deploy-prod"]["script"])  # the schedule takes over
+    assert "dbtp bundle run" not in " ".join(ci["deploy-prod"]["script"])  # the schedule takes over
 
 
 def test_main_pipeline_deploys_nothing():
     ci = load(".gitlab-ci.yml")
     deploying = [name for name, job in ci.items() if isinstance(job, dict)
-                 and any("bundle-deploy" in line or "ci-mr-build" in line for line in job.get("script", []))]
+                 and any("dbtp bundle deploy" in line or "dbtp mr-build" in line for line in job.get("script", []))]
     for name in deploying:
         rules = ci[name].get("rules") or [r for parent in ci[name]["extends"] for r in ci[parent].get("rules", [])]
         assert all("CI_DEFAULT_BRANCH" not in rule.get("if", "") for rule in rules), name

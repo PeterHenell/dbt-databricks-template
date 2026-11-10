@@ -18,8 +18,8 @@ def _artifact_dir(project: Project) -> Path:
     path = release.bundle_dir(project)
     if not (path / "databricks.yml").is_file():
         raise SetupError(
-            f"No unpacked artifact in {path.relative_to(project.root)}: run `make artifact` "
-            "(dbtp release build) first."
+            f"No unpacked artifact in {path.relative_to(project.root)}: run "
+            "`uv run dbtp release build` first."
         )
     return path
 
