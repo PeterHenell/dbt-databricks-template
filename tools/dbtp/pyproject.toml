@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     # dbt-core and dbt-databricks are not dependencies: each data product pins them
-    # in its own uv.lock, because they change model behaviour (dev-environment#07).
+    # in its own uv.lock, because they change model behaviour.
     "databricks-sdk>=0.50",
     "pyyaml>=6.0",
 ]

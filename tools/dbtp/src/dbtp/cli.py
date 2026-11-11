@@ -6,8 +6,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from dbtp import (__version__, build_changed, bundle, checks, devenv, local_engine, mr_build,
-                  personal, release, setup_dev)
+from dbtp import (__version__, build_changed, bundle, checks, devenv, init_product, local_engine,
+                  mr_build, personal, release, setup_dev)
 from dbtp.devenv import Project, SetupError
 
 PASSTHROUGH_HELP = "extra dbt arguments, after `--` (e.g. -- --exclude published)"
@@ -31,6 +31,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     def command(name: str, help: str) -> argparse.ArgumentParser:
         return sub.add_parser(name, help=help, description=help)
+
+    init = command("init", "Once, in a new repository: set the data product name and the team's "
+                           "dev settings")
+    init.add_argument("--product", help="data product name (lowercase, words joined by _)")
+    init.add_argument("--host", help="dev workspace URL, https://…")
+    init.add_argument("--warehouse-id", help="the team's shared SQL warehouse in the dev workspace")
+    init.add_argument("--team-catalog", help="the team catalog (personal environments, MR builds)")
+    init.add_argument("--product-dev-catalog", help="the product dev catalog")
+    init.add_argument("--yes", action="store_true",
+                      help="don't ask; leave values that aren't given as they are")
 
     setup = command("setup", "Check the Databricks login, write your personal profiles.yml, dbt deps")
     setup.add_argument("--alias", help="use this developer alias without asking")
@@ -86,6 +96,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def dispatch(args: argparse.Namespace, project: Project) -> int:
     match args.command:
+        case "init":
+            given = {name: getattr(args, name) for name in
+                     ("product", "host", "warehouse_id", "team_catalog", "product_dev_catalog")}
+            return init_product.main(project, given, args.yes)
         case "setup":
             return setup_dev.main(project, args.alias, args.yes)
         case "clone-sources":

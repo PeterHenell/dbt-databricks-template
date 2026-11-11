@@ -4,8 +4,8 @@ The setup, developer-environment and deployment tooling for dbt data products on
 Databricks, as one Python package with one command: `dbtp`.
 
 It lives in `tools/dbtp/` of the template for now, as a uv workspace member of the
-product repository, but it is written to be moved into a repository of its own
-(dev-environment#07): it imports nothing from the product repository, and it finds
+product repository, but it is written to be moved into a repository of its own:
+it imports nothing from the product repository, and it finds
 the repository it works on at run time.
 
 ## How a product repository uses it

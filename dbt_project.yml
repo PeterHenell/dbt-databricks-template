@@ -48,3 +48,9 @@ models:
       +materialized: table
       +contract:
         enforced: true
+
+seeds:
+  sample_product:
+    # Seeds (seeds/*.csv) are their own layer, so they never land in the fallback schema.
+    +schema: seeds
+    +file_format: delta

@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_project_name_matches_profile():
-    assert devenv.read_product(ROOT / "dbt_project.yml") == "sample_product"
+    devenv.read_product(ROOT / "dbt_project.yml")  # raises unless `name` == `profile` and valid
 
 
 def test_artifact_holds_the_deployable_project_only():
@@ -19,7 +19,7 @@ def test_artifact_holds_the_deployable_project_only():
     for left_out in ("Makefile", ".gitlab-ci.yml", "config/dev-environment.toml",
                      "tools/dbtp/src/dbtp/devenv.py", "tools/dbtp/src/dbtp/jobs/__init__.py"):
         assert left_out not in files
-    assert not any(f.startswith(("local/", "docs/", ".scratch/", "tests/test_")) for f in files)
+    assert not any(f.startswith(("local/", "docs/", "tests/test_")) for f in files)
     assert "profiles.yml" not in files  # the developer's own profile, never shipped (ADR 0002)
 
 

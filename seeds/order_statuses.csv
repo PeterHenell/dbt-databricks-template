@@ -1,0 +1,4 @@
+order_status,order_status_name,is_open
+F,Fulfilled,false
+O,Open,true
+P,Partially fulfilled,true

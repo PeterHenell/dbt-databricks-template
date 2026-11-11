@@ -8,16 +8,21 @@ product dev + prod catalogs, SQL warehouses,
 3 service principals, OIDC policy (team identity),
 OAuth secrets (product identities);
 :GitLab: **New project from template**;
-:Rename ""sample_product"" in dbt_project.yml (name, profile, models:),
-deploy/profiles.yml, databricks.yml, local/profiles.yml;
-:Fill in config/dev-environment.toml
-and the <placeholders> in databricks.yml;
-:Replace the sample tpch source and models;
-:""make test-tooling lint parse"";
+:Open it in the dev container;
+:""uv run dbtp init"";
 note right
-  Fails if the names don't match
-  or the bundle doesn't validate
+  Sets the product name everywhere it is needed,
+  config/dev-environment.toml and the dev target
+  of databricks.yml
 end note
+:Fill in the prod <placeholders> in databricks.yml;
+:""make setup clone-sources build"";
+note right
+  The sample models, seed and tests
+  build without any changes
+end note
+:Replace the samples with your own sources and models
+(docs/first-models.md);
 |GitLab settings|
 :CI/CD variables: DATABRICKS_OIDC_AUDIENCE, TEAM_CLIENT_ID,
 PRODUCT_DEV_CLIENT_ID/_SECRET, PRODUCT_PROD_CLIENT_ID/_SECRET

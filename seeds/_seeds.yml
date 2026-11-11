@@ -1,0 +1,23 @@
+version: 2
+
+# Seeds are small, static CSV files that dbt loads as tables (`dbt seed`, or `make build`).
+# Use them for lookup data that changes rarely and is reviewed in merge requests, never
+# for data that comes from another system. Reference one like a model: ref('order_statuses').
+
+seeds:
+  - name: order_statuses
+    description: The TPC-H order status codes (`o_orderstatus`), with a readable name.
+    config:
+      column_types:
+        order_status: string
+        order_status_name: string
+        is_open: boolean
+    columns:
+      - name: order_status
+        description: One-letter status code, as in the source.
+        data_tests: [unique, not_null]
+      - name: order_status_name
+        data_tests: [not_null]
+      - name: is_open
+        description: True while the order still has open line items.
+        data_tests: [not_null]

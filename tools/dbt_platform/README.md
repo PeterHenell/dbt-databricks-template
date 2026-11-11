@@ -13,8 +13,7 @@ The platform's dbt macros for data products on Databricks, as one dbt package:
 | `local_spark/` | Local Spark engine only: NOT NULL contracts as CHECK constraints |
 
 It lives in `tools/dbt_platform/` of the template for now, next to the `dbtp` CLI
-(`tools/dbtp/`), and is written to move into a repository of its own
-(dev-environment#07). It knows nothing about the product: the product name is dbt's
+(`tools/dbtp/`), and is written to move into a repository of its own. It knows nothing about the product: the product name is dbt's
 `project_name` (the root project), and the macros only look at the root project's
 nodes and sources.
 
