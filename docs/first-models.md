@@ -7,12 +7,11 @@ In the examples, `<product>` is your data product name (the `name` in `dbt_proje
 You will:
 
 1. build the samples and look at the results;
-2. add your first source;
-3. add a staging model for it, with tests;
-4. use it in the published interface;
-5. learn how the sample seed and unit test work;
-6. check your work and open a merge request;
-7. replace the samples with your own sources.
+2. add a model, with tests;
+3. use it in the published interface;
+4. learn how the sample seed and unit test work;
+5. check your work and open a merge request;
+6. replace the samples with your own sources.
 
 ## 1. Build the samples and look at the results
 
@@ -52,75 +51,38 @@ stg_sample__orders ──> int_orders_aggregated_to_customer ──> customers (
 seeds/order_statuses.csv ──┘
 ```
 
-- **Sample data** (`models/staging/sample/`): the two sample models generate a few customers and orders with a plain `select … from values`, so the template builds without reading any table. They stand in for staging models on a real source; you add one in step 2.
+- **Sample data** (`models/staging/sample/`): the two sample models generate a few customers and orders with a plain `select … from values`, so the template builds without reading any table. They stand in for staging models on real sources, which you add in step 6.
 - **Sources** declare the tables the product reads from other systems. Models read them with `{{ source('<source>', '<table>') }}`, never with a table name in the SQL.
 - **Staging** (`models/staging/<source>/`): one view per source table, named `stg_<source>__<entity>`. It only renames and casts columns to the project's conventions, without joins or business logic.
 - **Intermediate** (`models/intermediate/`): `int_` models with the business logic, built from staging models and seeds.
-- **Published** (`models/published/`): what consumers of the data product read. These models are versioned and have an enforced contract (more in step 4).
+- **Published** (`models/published/`): what consumers of the data product read. These models are versioned and have an enforced contract (more in step 3).
 - **Seeds** (`seeds/`): small CSV files of lookup data that dbt loads as tables.
 
 Models refer to each other with `{{ ref('model_name') }}`. That is how dbt knows the build order, and how it puts each model in the right schema for whoever runs it.
 
-## 2. Add your first source
+## 2. Add a model, with tests
 
-A real product reads its data from **sources**: tables that other systems or teams write. As an example, add a table that every Databricks workspace has, Databricks' built-in `samples.tpch.nation`. It names the nation that `stg_sample__customers.nation_id` points to.
+Add a third sample model: a list of nations, which names the nation that `stg_sample__customers.nation_id` points to. Like the other two, it generates its rows in a plain select.
 
-First say where the source lives in prod. In `dbt_project.yml`, under `vars:`, add
-
-```yaml
-  tpch_catalog: samples
-  tpch_schema: tpch
-```
-
-Then declare the source in a new file, `models/staging/tpch/_tpch__sources.yml`:
-
-```yaml
-version: 2
-
-sources:
-  - name: tpch
-    description: Databricks' built-in TPC-H sample data.
-    # The local Spark engine (local/) has no catalogs, only schema.table.
-    database: "{{ var('tpch_catalog') if target.type == 'databricks' else none }}"
-    schema: "{{ var('tpch_schema') }}"
-    tables:
-      - name: nation
-        description: One row per nation.
-        columns:
-          - name: n_nationkey
-            data_tests: [unique, not_null]
-```
-
-Keeping the catalog and schema in variables means a run or a target can point the source elsewhere without touching the YAML.
-
-Your builds read your clones of the sources, not prod (that's the default **source mode**, `clone`), so make a clone of the new table:
-
-```sh
-make clone-sources
-```
-
-It prints the tables it cloned into `<product>__<alias>__src_clone`, here `tpch.nation` (as `tpch__nation`). Run it again whenever you add a source table, or when you want fresher data from prod.
-
-## 3. Add a staging model, with tests
-
-Create `models/staging/tpch/stg_tpch__nations.sql`:
+Create `models/staging/sample/stg_sample__nations.sql`:
 
 ```sql
 select
-    n_nationkey as nation_id,
-    n_name as nation_name,
-    n_regionkey as region_id
-from {{ source('tpch', 'nation') }}
+    cast(nation_id as bigint) as nation_id,
+    nation_name
+from
+    values
+    (3, 'Denmark'),
+    (7, 'Norway'),
+    (21, 'Sweden')
+        as nations (nation_id, nation_name)
 ```
 
-Describe and test it in a new file, `models/staging/tpch/_tpch__models.yml`:
+Describe and test it in `models/staging/sample/_sample__models.yml`, under `models:`:
 
 ```yaml
-version: 2
-
-models:
-  - name: stg_tpch__nations
-    description: Nations, renamed to project conventions.
+  - name: stg_sample__nations
+    description: A few sample nations, generated in the model's SQL.
     columns:
       - name: nation_id
         data_tests: [unique, not_null]
@@ -131,26 +93,26 @@ models:
 Every model gets a description, and its key gets `unique` and `not_null` tests. Build the new model and run its tests, then look at it:
 
 ```sh
-make build SELECT=stg_tpch__nations
-uv run dbt show --select stg_tpch__nations
+make build SELECT=stg_sample__nations
+uv run dbt show --select stg_sample__nations
 ```
 
-`SELECT` takes any dbt selector: `SELECT=+customers` builds a model and everything upstream of it, `SELECT=stg_tpch__nations+` a model and everything downstream.
+`SELECT` takes any dbt selector: `SELECT=+customers` builds a model and everything upstream of it, `SELECT=stg_sample__nations+` a model and everything downstream.
 
-You can also make customers' nations a tested relationship: in `models/staging/sample/_sample__models.yml`, under `stg_sample__customers`'s `columns:`, add
+You can also make customers' nations a tested relationship: in the same file, under `stg_sample__customers`'s `columns:`, add
 
 ```yaml
       - name: nation_id
         data_tests:
           - relationships:
               arguments:
-                to: ref('stg_tpch__nations')
+                to: ref('stg_sample__nations')
                 field: nation_id
 ```
 
 and run `make test SELECT=stg_sample__customers`.
 
-## 4. Use it in the published interface
+## 3. Use it in the published interface
 
 Consumers read the **published interface**: the `customers` table in schema `v1` or `v2`. Its columns and types are a contract: dbt refuses to build the model if its result doesn't have exactly the columns and types declared in `models/published/_published.yml`. Adding a column is a non-breaking change, so it goes into the current version, `v2`. Removing or renaming a column is a breaking change, which needs a new version ([`published-interface.md`](published-interface.md)).
 
@@ -169,7 +131,7 @@ select
 from {{ ref('stg_sample__customers') }} as customers
 left join {{ ref('int_orders_aggregated_to_customer') }} as orders
     on customers.customer_id = orders.customer_id
-left join {{ ref('stg_tpch__nations') }} as nations
+left join {{ ref('stg_sample__nations') }} as nations
     on customers.nation_id = nations.nation_id
 ```
 
@@ -200,7 +162,7 @@ uv run dbt show --select customers
 
 If you forget the YAML or get a type wrong, the build stops with a contract error that lists the expected and actual columns.
 
-## 5. The seed and the unit test
+## 4. The seed and the unit test
 
 **The seed.** `seeds/order_statuses.csv` maps the one-letter order status codes in `stg_sample__orders` to names, and says which statuses count as open:
 
@@ -221,7 +183,7 @@ make test SELECT=test_type:unit
 
 Write unit tests for logic that is easy to get wrong: aggregations, conditions, date arithmetic. List only the input columns the model uses.
 
-## 6. Check your work and open a merge request
+## 5. Check your work and open a merge request
 
 Before you push, run the checks the MR pipeline runs first:
 
@@ -231,21 +193,32 @@ make lint parse
 
 `lint` checks the SQL style (sqlfluff) and the YAML (yamllint). `parse` checks that the project is valid as the deployment sees it, without connecting to Databricks. Then commit, push your branch and open a merge request. The pipeline runs the same checks, the tooling tests, and then a full `dbt build` from the prod sources into the shared MR schemas (`<product>__mr__*`). A green MR means the change is ready to merge. Deploying is a separate step: a release ([README](../README.md), "From change to prod").
 
-## 7. Replace the samples with your own sources
+## 6. Replace the samples with your own sources
 
 When you are ready to build your real product, replace the samples one layer at a time:
 
-1. **Sources.** Add a folder `models/staging/<source>/` with `_<source>__sources.yml` for each real source, as in step 2. Put each source's catalog and schema in variables in `dbt_project.yml`, and set `database` only on Databricks:
+1. **Sources.** Sources are the tables the product reads from other systems. For each one, add a folder `models/staging/<source>/` with a file `_<source>__sources.yml` that says where its tables live in prod:
 
    ```yaml
-   database: "{{ var('crm_catalog') if target.type == 'databricks' else none }}"
-   schema: "{{ var('crm_schema') }}"
+   version: 2
+
+   sources:
+     - name: crm
+       description: Customer records from the CRM system.
+       # The local Spark engine (local/) has no catalogs, only schema.table.
+       database: "{{ 'crm_prod' if target.type == 'databricks' else none }}"
+       schema: crm
+       tables:
+         - name: customers
+           columns:
+             - name: customer_id
+               data_tests: [unique, not_null]
    ```
 
-   Run `make clone-sources` after adding sources. Your team needs read access to them (README, section 1).
-2. **Staging and intermediate models** for the new sources, as in steps 3 to 5.
+   Models read a source table with `{{ source('crm', 'customers') }}`, never with its table name. Every build reads the prod location written here, except in your personal environment, where `source()` reads your own shallow clones of the tables instead (the **source mode**, `clone` by default). Make or refresh the clones with `make clone-sources` after adding a source, and whenever you want fresher data. Your team needs read access to the sources (README, section 1).
+2. **Staging and intermediate models** for the new sources, as in steps 2 to 4: a staging model selects from `source()` instead of generating its rows.
 3. **Published models.** A new product starts its published interface at version 1: `models/published/<model>_v1.sql`, and in the YAML `latest_version: 1` and `versions: [{v: 1}]`, with a `data_type` for every column. Copy the shape of `_published.yml`.
-4. **Delete the samples** once nothing refers to them: `models/staging/sample/`, `models/intermediate/int_orders_aggregated_to_customer.sql`, `models/published/customers_v*.sql`, their entries in the YAML files, and `seeds/order_statuses.csv` and its entry. If you added the `tpch` source in step 2 only as an exercise, delete `models/staging/tpch/` and the `tpch_*` variables too. If you use the local engine, put stand-ins for your own sources in `local/sources.sql`.
+4. **Delete the samples** once nothing refers to them: `models/staging/sample/`, `models/intermediate/int_orders_aggregated_to_customer.sql`, `models/published/customers_v*.sql`, their entries in the YAML files, and `seeds/order_statuses.csv` and its entry. If you use the local engine, put stand-ins for your own sources in `local/sources.sql`.
 5. `make clean-dev` drops your whole personal environment, so the old sample tables don't linger, and `make build` builds it again from scratch.
 
 ### Rules that keep the project working

@@ -5,9 +5,8 @@ title 8. Add a new source
 start
 :Ask the platform team for read access
 from the dev workspace and from the job identities;
-:Add vars to dbt_project.yml
-(e.g. ""crm_catalog"", ""crm_schema"");
 :Create ""models/staging/crm/_crm~__sources.yml""
+with the prod catalog and schema
 (database only when target.type == 'databricks');
 :Add ""stg_crm~__<entity>.sql"" views;
 :""make clone-sources"";

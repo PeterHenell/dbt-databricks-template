@@ -165,7 +165,7 @@ Source: [`diagrams/workflow-7-failed-release.puml`](diagrams/workflow-7-failed-r
 
 ## 8. Add a new source
 
-Source locations are project variables, never hard-coded, so each environment can point at its own copy. After adding the source, clone it before building in your environment (the default mode reads clones).
+The source YAML names the source's prod location; every environment reads that, except personal environments, which read their clones. After adding the source, clone it before building in your environment (the default mode reads clones).
 
 ![8. Add a new source](diagrams/workflow-8-new-source.svg)
 
