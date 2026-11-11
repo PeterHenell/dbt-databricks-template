@@ -1,0 +1,23 @@
+version: 2
+
+# The sample data: plain selects that generate a few rows, standing in for staging
+# models on a real source. Replace them with your own (docs/first-models.md, step 7).
+
+models:
+  - name: stg_sample__customers
+    description: A few sample customers, generated in the model's SQL.
+    columns:
+      - name: customer_id
+        data_tests: [unique, not_null]
+  - name: stg_sample__orders
+    description: A few sample orders, generated in the model's SQL.
+    columns:
+      - name: order_id
+        data_tests: [unique, not_null]
+      - name: customer_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_sample__customers')
+                field: customer_id

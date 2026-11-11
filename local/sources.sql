@@ -1,0 +1,10 @@
+-- Stand-ins for the product's sources, for the local Spark engine only (the
+-- local engine can't read Databricks tables). Run by `make local-sources`.
+-- Give each table the schema, table and column names and types of the prod
+-- source, and a few rows. The sample models read no source, so there is none
+-- yet. For example, for a source `crm` with a table `customers`:
+--
+-- create schema if not exists crm;
+--
+-- create or replace table crm.customers using delta as
+-- select * from values (1, 'Ada'), (2, 'Grace') as t (customer_id, customer_name);

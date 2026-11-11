@@ -11,7 +11,7 @@ if (Why?) then (first time, new source,\nstale data, or\n"file not found" after 
   if (Source is a table?) then (yes)
     :""CREATE OR REPLACE TABLE ... SHALLOW CLONE <prod table>"";
     note right
-      sample_product~__jodo~__src_clone.tpch~__orders, ...
+      sample_product~__jodo~__src_clone.crm~__orders, ...
       Points at prod's current files, copies nothing
     end note
   else (view)

@@ -6,7 +6,7 @@ version: 2
 
 seeds:
   - name: order_statuses
-    description: The TPC-H order status codes (`o_orderstatus`), with a readable name.
+    description: The order status codes used in `stg_sample__orders`, with a readable name.
     config:
       column_types:
         order_status: string
@@ -14,7 +14,7 @@ seeds:
         is_open: boolean
     columns:
       - name: order_status
-        description: One-letter status code, as in the source.
+        description: One-letter status code.
         data_tests: [unique, not_null]
       - name: order_status_name
         data_tests: [not_null]

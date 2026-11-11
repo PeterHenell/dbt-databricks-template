@@ -85,7 +85,7 @@ export COMPOSE_CMD
 .PHONY: local-up local-sources local-dbt local-sql local-down local-clean
 local-up: ## Build the image and start the Postgres metastore
 	$(DBTP) local up
-local-sources: ## Create the small stand-in `tpch` source tables
+local-sources: ## Create the local stand-in source tables (local/sources.sql)
 	$(DBTP) local sources
 local-dbt: ## Run dbt locally (default `build`; e.g. ARGS="build --select customers")
 	$(DBTP) local dbt $(ARGS)

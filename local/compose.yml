@@ -2,7 +2,7 @@
 # Delta Lake, and its table catalog (Hive metastore) in Postgres.
 #
 #   make local-up        start the metastore database
-#   make local-sources   create the stand-in `tpch` source tables
+#   make local-sources   create the stand-in source tables (local/sources.sql)
 #   make local-dbt       dbt build (or ARGS="...")
 #   make local-sql       Spark SQL shell
 #   make local-down      stop; make local-clean also deletes all local data

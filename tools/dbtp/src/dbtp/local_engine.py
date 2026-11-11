@@ -59,9 +59,9 @@ def up(project: Project, sleep=time.sleep) -> int:
 
 
 def sources(project: Project) -> int:
-    """Create the small stand-in `tpch` source tables."""
+    """Create the local stand-ins for the sources (`local/sources.sql`)."""
     up(project)
-    return _compose(project, "run", "--rm", "spark-sql", "-f", "/project/local/tpch.sql")
+    return _compose(project, "run", "--rm", "spark-sql", "-f", "/project/local/sources.sql")
 
 
 def relative_package_links(project: Project) -> list[Path]:
