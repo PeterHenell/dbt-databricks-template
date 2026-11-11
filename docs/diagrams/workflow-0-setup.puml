@@ -29,7 +29,7 @@ end note
 :Shallow clone of every source table;
 note right
   sample_product~__jodo~__src_clone
-  .tpch~__orders, .tpch~__customer, ...
+  .crm~__customers, .crm~__orders, ...
   (no data copied)
 end note
 |Developer (dev container)|

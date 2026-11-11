@@ -7,7 +7,7 @@ In the examples, `<product>` is your data product name (the `name` in `dbt_proje
 You will:
 
 1. build the samples and look at the results;
-2. add a new source table;
+2. add your first source;
 3. add a staging model for it, with tests;
 4. use it in the published interface;
 5. learn how the sample seed and unit test work;
@@ -17,19 +17,17 @@ You will:
 ## 1. Build the samples and look at the results
 
 ```sh
-make clone-sources     # your own shallow clones of the sample sources
 make build             # build and test everything into your personal environment
 ```
 
-The first dbt command opens a browser window to log dbt in to Databricks; sign in with your own account. `make build` runs `dbt build`: it loads the seed, builds every model and runs every test, in dependency order. It ends with a line like `Done. PASS=26 WARN=0 ERROR=0 SKIP=0`.
+The first dbt command opens a browser window to log dbt in to Databricks; sign in with your own account. `make build` runs `dbt build`: it loads the seed, builds every model and runs every test, in dependency order. It ends with a line like `Done. PASS=22 WARN=0 ERROR=0 SKIP=0`.
 
 Everything went into your **personal environment**: schemas in the team catalog that only you write to.
 
 | Schema | What is in it | Made from |
 |---|---|---|
-| `<product>__<alias>__src_clone` | Shallow clones of the sources (`tpch__customer`, `tpch__orders`) | `make clone-sources` |
 | `<product>__<alias>__seeds` | `order_statuses`, loaded from a CSV file | `seeds/order_statuses.csv` |
-| `<product>__<alias>__staging` | `stg_tpch__customers`, `stg_tpch__orders` (views) | `models/staging/tpch/` |
+| `<product>__<alias>__staging` | `stg_sample__customers`, `stg_sample__orders` (views) | `models/staging/sample/` |
 | `<product>__<alias>__intermediate` | `int_orders_aggregated_to_customer` (view) | `models/intermediate/` |
 | `<product>__<alias>__v1`, `…__v2` | `customers`, in two versions (tables) | `models/published/` |
 
@@ -49,12 +47,13 @@ select * from <team_catalog>.<product>__<alias>__v2.customers limit 10;
 ### How the sample fits together
 
 ```text
-samples.tpch.customer ──> stg_tpch__customers ───────────────────────────────┐
-samples.tpch.orders ────> stg_tpch__orders ──> int_orders_aggregated_to_customer ──> customers (v1, v2)
-seeds/order_statuses.csv ─────────────────────┘
+stg_sample__customers ──────────────────────────────────────────────┐
+stg_sample__orders ──> int_orders_aggregated_to_customer ──> customers (v1, v2)
+seeds/order_statuses.csv ──┘
 ```
 
-- **Sources** (`models/staging/tpch/_tpch__sources.yml`) declare the tables the product reads, here Databricks' built-in `samples.tpch`. Models read them with `{{ source('tpch', 'orders') }}`, never with a table name in the SQL.
+- **Sample data** (`models/staging/sample/`): the two sample models generate a few customers and orders with a plain `select … from values`, so the template builds without reading any table. They stand in for staging models on a real source; you add one in step 2.
+- **Sources** declare the tables the product reads from other systems. Models read them with `{{ source('<source>', '<table>') }}`, never with a table name in the SQL.
 - **Staging** (`models/staging/<source>/`): one view per source table, named `stg_<source>__<entity>`. It only renames and casts columns to the project's conventions, without joins or business logic.
 - **Intermediate** (`models/intermediate/`): `int_` models with the business logic, built from staging models and seeds.
 - **Published** (`models/published/`): what consumers of the data product read. These models are versioned and have an enforced contract (more in step 4).
@@ -62,13 +61,29 @@ seeds/order_statuses.csv ──────────────────�
 
 Models refer to each other with `{{ ref('model_name') }}`. That is how dbt knows the build order, and how it puts each model in the right schema for whoever runs it.
 
-## 2. Add a source table
+## 2. Add your first source
 
-The sample reads two tables of `samples.tpch`. Add a third: `nation`, which names the nation that `stg_tpch__customers.nation_id` points to.
+A real product reads its data from **sources**: tables that other systems or teams write. As an example, add a table that every Databricks workspace has, Databricks' built-in `samples.tpch.nation`. It names the nation that `stg_sample__customers.nation_id` points to.
 
-In `models/staging/tpch/_tpch__sources.yml`, add the table under `tables:`:
+First say where the source lives in prod. In `dbt_project.yml`, under `vars:`, add
 
 ```yaml
+  tpch_catalog: samples
+  tpch_schema: tpch
+```
+
+Then declare the source in a new file, `models/staging/tpch/_tpch__sources.yml`:
+
+```yaml
+version: 2
+
+sources:
+  - name: tpch
+    description: Databricks' built-in TPC-H sample data.
+    # The local Spark engine (local/) has no catalogs, only schema.table.
+    database: "{{ var('tpch_catalog') if target.type == 'databricks' else none }}"
+    schema: "{{ var('tpch_schema') }}"
+    tables:
       - name: nation
         description: One row per nation.
         columns:
@@ -76,13 +91,15 @@ In `models/staging/tpch/_tpch__sources.yml`, add the table under `tables:`:
             data_tests: [unique, not_null]
 ```
 
+Keeping the catalog and schema in variables means a run or a target can point the source elsewhere without touching the YAML.
+
 Your builds read your clones of the sources, not prod (that's the default **source mode**, `clone`), so make a clone of the new table:
 
 ```sh
 make clone-sources
 ```
 
-It prints the tables it cloned; `tpch.nation` is now among them.
+It prints the tables it cloned into `<product>__<alias>__src_clone`, here `tpch.nation` (as `tpch__nation`). Run it again whenever you add a source table, or when you want fresher data from prod.
 
 ## 3. Add a staging model, with tests
 
@@ -96,9 +113,12 @@ select
 from {{ source('tpch', 'nation') }}
 ```
 
-Describe and test it in `models/staging/tpch/_tpch__models.yml`, under `models:`:
+Describe and test it in a new file, `models/staging/tpch/_tpch__models.yml`:
 
 ```yaml
+version: 2
+
+models:
   - name: stg_tpch__nations
     description: Nations, renamed to project conventions.
     columns:
@@ -117,7 +137,7 @@ uv run dbt show --select stg_tpch__nations
 
 `SELECT` takes any dbt selector: `SELECT=+customers` builds a model and everything upstream of it, `SELECT=stg_tpch__nations+` a model and everything downstream.
 
-You can also make customers' nations a tested relationship: in the same file, under `stg_tpch__customers`, add
+You can also make customers' nations a tested relationship: in `models/staging/sample/_sample__models.yml`, under `stg_sample__customers`'s `columns:`, add
 
 ```yaml
       - name: nation_id
@@ -128,7 +148,7 @@ You can also make customers' nations a tested relationship: in the same file, un
                 field: nation_id
 ```
 
-and run `make test SELECT=stg_tpch__customers`.
+and run `make test SELECT=stg_sample__customers`.
 
 ## 4. Use it in the published interface
 
@@ -146,7 +166,7 @@ select
     cast(coalesce(orders.lifetime_value, 0) as decimal(18, 2)) as total_order_value,
     orders.first_order_date,
     orders.most_recent_order_date
-from {{ ref('stg_tpch__customers') }} as customers
+from {{ ref('stg_sample__customers') }} as customers
 left join {{ ref('int_orders_aggregated_to_customer') }} as orders
     on customers.customer_id = orders.customer_id
 left join {{ ref('stg_tpch__nations') }} as nations
@@ -182,7 +202,7 @@ If you forget the YAML or get a type wrong, the build stops with a contract erro
 
 ## 5. The seed and the unit test
 
-**The seed.** `seeds/order_statuses.csv` maps the one-letter order status codes in the source to names, and says which statuses count as open:
+**The seed.** `seeds/order_statuses.csv` maps the one-letter order status codes in `stg_sample__orders` to names, and says which statuses count as open:
 
 ```text
 order_status,order_status_name,is_open
@@ -215,7 +235,7 @@ make lint parse
 
 When you are ready to build your real product, replace the samples one layer at a time:
 
-1. **Sources.** Add a folder `models/staging/<source>/` with `_<source>__sources.yml` for each real source. Put each source's catalog and schema in variables in `dbt_project.yml` (like `tpch_catalog` and `tpch_schema`), and set `database` only on Databricks, as the sample does:
+1. **Sources.** Add a folder `models/staging/<source>/` with `_<source>__sources.yml` for each real source, as in step 2. Put each source's catalog and schema in variables in `dbt_project.yml`, and set `database` only on Databricks:
 
    ```yaml
    database: "{{ var('crm_catalog') if target.type == 'databricks' else none }}"
@@ -225,7 +245,7 @@ When you are ready to build your real product, replace the samples one layer at 
    Run `make clone-sources` after adding sources. Your team needs read access to them (README, section 1).
 2. **Staging and intermediate models** for the new sources, as in steps 3 to 5.
 3. **Published models.** A new product starts its published interface at version 1: `models/published/<model>_v1.sql`, and in the YAML `latest_version: 1` and `versions: [{v: 1}]`, with a `data_type` for every column. Copy the shape of `_published.yml`.
-4. **Delete the samples** once nothing refers to them: `models/staging/tpch/`, `models/intermediate/int_orders_aggregated_to_customer.sql`, `models/published/customers_v*.sql`, their entries in the YAML files, `seeds/order_statuses.csv` and its entry, and the `tpch_*` variables in `dbt_project.yml`. If you use the local engine, replace `local/tpch.sql` with stand-ins for your own sources.
+4. **Delete the samples** once nothing refers to them: `models/staging/sample/`, `models/intermediate/int_orders_aggregated_to_customer.sql`, `models/published/customers_v*.sql`, their entries in the YAML files, and `seeds/order_statuses.csv` and its entry. If you added the `tpch` source in step 2 only as an exercise, delete `models/staging/tpch/` and the `tpch_*` variables too. If you use the local engine, put stand-ins for your own sources in `local/sources.sql`.
 5. `make clean-dev` drops your whole personal environment, so the old sample tables don't linger, and `make build` builds it again from scratch.
 
 ### Rules that keep the project working

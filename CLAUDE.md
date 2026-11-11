@@ -34,14 +34,14 @@ The Makefile holds only the developer's daily commands. CI-only steps are `uv ru
 
 ## Project layout and conventions
 
-- `models/staging/<source>/`: one view per source table, renamed to project conventions (`stg_<source>__<entity>`); sources declared in `_<source>__sources.yml`. Source locations come from project variables (e.g. `tpch_catalog`, `tpch_schema`), never hard-coded, and set `database` only when `target.type == 'databricks'` (the local engine has no catalogs).
+- `models/staging/<source>/`: one view per source table, renamed to project conventions (`stg_<source>__<entity>`); sources declared in `_<source>__sources.yml`. Source locations come from project variables (e.g. `crm_catalog`, `crm_schema`), never hard-coded, and set `database` only when `target.type == 'databricks'` (the local engine has no catalogs).
 - `models/intermediate/`: `int_` views with the business logic.
 - `models/published/`: the published interface that consumers read. Every model here is versioned (`<model>_vN.sql`, `versions:` in YAML) with an enforced contract (`data_type` on every column); version N is built into schema `vN` under the plain model name. How to add or retire a version: `docs/published-interface.md`.
 - `seeds/`: small static lookup CSVs, documented and tested in `seeds/_seeds.yml`, built into the `seeds` layer.
 - Each folder is a layer with its own schema, set with `+schema` in `dbt_project.yml`. A new model folder needs a `+schema`, otherwise its models fall back to the profile's schema (`tests/test_bundle.py` catches that).
 - All models are Delta (`+file_format: delta`).
 - Every model gets a description and at least a `unique` + `not_null` test on its key; put logic worth checking under `unit_tests:`.
-- The sample source is Databricks' built-in `samples.tpch`; `local/tpch.sql` makes a small copy for the local engine. `docs/first-models.md` walks through adding models.
+- The sample models (`models/staging/sample/`) generate a few rows in plain selects and read no source. `local/sources.sql` holds stand-ins of the sources for the local engine. `docs/first-models.md` walks through adding a source and models.
 
 ## How it works
 

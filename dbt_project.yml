@@ -25,10 +25,8 @@ vars:
   # Where a personal environment reads sources from: prod | clone | sample (dbt_platform: macros/source_modes.sql).
   # Prod and MR targets ignore it. Override per run: --vars '{dev_source_mode: prod}'.
   dev_source_mode: clone
-  # Where the sources live in prod. Override per run with `--vars`, or per target
-  # in the source YAML.
-  tpch_catalog: samples
-  tpch_schema: tpch
+  # Where each source lives in prod, e.g. `crm_catalog: crm_prod` and `crm_schema: crm`
+  # (docs/first-models.md, step 2). The sample models read no source.
 
 models:
   sample_product:

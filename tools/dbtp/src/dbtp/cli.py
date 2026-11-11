@@ -60,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     local = command("local", "Local engine: Apache Spark + Postgres metastore in containers")
     local_sub = local.add_subparsers(dest="action", required=True, metavar="<action>")
     for name, help in (("up", "build the image and start the Postgres metastore"),
-                       ("sources", "create the small stand-in `tpch` source tables"),
+                       ("sources", "create the local stand-in source tables (local/sources.sql)"),
                        ("sql", "open a Spark SQL shell on the local catalog"),
                        ("down", "stop the containers (keeps the data)"),
                        ("clean", "stop and delete all local tables and the catalog")):

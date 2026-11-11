@@ -6,9 +6,9 @@ start
 :""make local-sources"";
 |Local containers|
 :Build the dbt image, start Postgres (Hive metastore);
-:Run local/tpch.sql;
+:Run local/sources.sql;
 note right
-  Small stand-in tpch tables
+  Small stand-in source tables
   in a local Spark warehouse
 end note
 |Developer (host shell)|

@@ -6,6 +6,6 @@ select
     cast(coalesce(orders.lifetime_value, 0) as decimal(18, 2)) as lifetime_value,
     orders.first_order_date,
     orders.most_recent_order_date
-from {{ ref('stg_tpch__customers') }} as customers
+from {{ ref('stg_sample__customers') }} as customers
 left join {{ ref('int_orders_aggregated_to_customer') }} as orders
     on customers.customer_id = orders.customer_id

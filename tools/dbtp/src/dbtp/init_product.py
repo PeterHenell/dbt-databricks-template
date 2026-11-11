@@ -171,7 +171,6 @@ def main(project: Project, given: dict[str, str | None], assume_yes: bool) -> in
     print(
         "\nNext:\n"
         "  make setup          log in check, your personal profiles.yml, dbt deps\n"
-        "  make clone-sources  your copies of the sample sources\n"
         "  make build          build and test the sample models in your personal environment\n"
         "Deployment settings (the prod target in databricks.yml, GitLab variables) are\n"
         "described in README.md, \"Turn the template into your data product\"."
