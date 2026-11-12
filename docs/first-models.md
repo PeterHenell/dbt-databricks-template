@@ -1,8 +1,8 @@
 # Building your first models
 
-This guide takes you from the sample models that come with the template to models of your own. It assumes your environment is set up as the [README](../README.md) describes: the repository is initialized (`uv run dbtp init`), you are in the dev container, and `make setup` has run. Every command runs in the dev container's terminal, from the repository root.
+This guide takes you from the sample models that come with the template to models of your own. It assumes your environment is set up as the [README](../README.md) describes: you are in the dev container and `uv run dbtp init` has run (it initializes the repository and writes your `profiles.yml`). Every command runs in the dev container's terminal, from the repository root.
 
-In the examples, `<product>` is your data product name (the `name` in `dbt_project.yml`), `<alias>` is your developer alias (the one `make setup` asked for, in the `schema` line of your `profiles.yml`), and `<team_catalog>` is the team catalog from `config/dev-environment.toml`.
+In the examples, `<product>` is your data product name (the `name` in `dbt_project.yml`), `<alias>` is your developer alias (the one `dbtp init` asked for, in the `schema` line of your `profiles.yml`), and `<team_catalog>` is the team catalog from `config/dev-environment.toml`.
 
 You will:
 

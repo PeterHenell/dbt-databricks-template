@@ -1,4 +1,4 @@
-"""`dbtp setup` (`make setup`): create the developer's personal dev profile.
+"""The personal part of `dbtp init`: create the developer's personal dev profile.
 
 1. Checks for a Databricks CLI OAuth (user-to-machine) login to the dev workspace.
 2. Suggests a developer alias from the logged-in user's name and lets the developer
@@ -6,7 +6,8 @@
 3. Writes the gitignored `profiles.yml` at the repo root (ADR 0002).
 4. Installs the dbt packages (`dbt deps`).
 
-Python dependencies (dbtp itself among them) are installed by `uv sync` before this runs.
+Python dependencies (dbtp itself among them) are installed by `uv sync`, which `uv run`
+does before it starts dbtp.
 """
 
 from __future__ import annotations
@@ -71,7 +72,7 @@ def cli_access_token(host: str, profile: str | None) -> str:
     login_help = (
         "No valid Databricks CLI login for the dev workspace.\n"
         f"  Log in with:  databricks auth login --host {host}\n"
-        "  (a browser opens; sign in with your own account), then run `make setup` again."
+        "  (a browser opens; sign in with your own account), then run the command again."
     )
     try:
         result = subprocess.run(
@@ -191,6 +192,7 @@ def main(project: Project, alias: str | None = None, assume_yes: bool = False) -
     if code := devenv.run(["dbt", "deps"], project):
         return code
     print(
-        "\nNext: `uv run dbt build` (the first dbt run opens a browser to sign in to dbt-databricks)."
+        "\nNext: `make build` builds and tests the sample models in your personal environment\n"
+        "(the first dbt run opens a browser to sign in to dbt-databricks)."
     )
     return 0

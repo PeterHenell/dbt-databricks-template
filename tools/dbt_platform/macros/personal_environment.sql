@@ -16,7 +16,7 @@
           or alias.startswith('_') or alias.endswith('_') -%}
         {{ exceptions.raise_compiler_error(
             "target.schema '" ~ target.schema ~ "' is not a personal environment ('"
-            ~ product_prefix ~ "<alias>'). Check `schema` in profiles.yml or run `make setup`."
+            ~ product_prefix ~ "<alias>'). Check `schema` in profiles.yml or run `uv run dbtp init`."
         ) }}
     {%- endif -%}
     {%- if alias == 'mr' -%}

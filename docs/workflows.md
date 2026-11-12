@@ -1,6 +1,6 @@
 # Developer workflows
 
-How the team works with this repository, from a new developer's first `make setup` to rolling back prod. Each section has a short description and a PlantUML activity diagram:
+How the team works with this repository, from a new developer's first `uv run dbtp init` to rolling back prod. Each section has a short description and a PlantUML activity diagram:
 
 - the **lanes** show where a step runs (you in the dev container, GitLab CI, or Databricks);
 - each **box** is a step, with the command to type in `monospace`;
@@ -44,8 +44,8 @@ In a diagram, `~` before `__` or `--` stops PlantUML from reading them as underl
 You need: access to the dev workspace, and the team catalog (ask the platform team if not). Nothing else has to be set up by hand.
 
 1. **Open the repository in the dev container** (VS Code: "Reopen in Container"). The container has the pinned uv, Databricks CLI and Python; see [`dev-container.md`](dev-container.md).
-2. **Log in the Databricks CLI** with your own account. `make setup` uses this login to look up your name and later to download the product dev manifest.
-3. **`make setup`**: installs the locked Python packages, checks the login, suggests a **developer alias** (two letters of your first and last name), and writes the gitignored `./profiles.yml` with `schema: <product>__<alias>` in the team catalog. Then `dbt deps`.
+2. **Log in the Databricks CLI** with your own account. `dbtp init` uses this login to look up your name and later to download the product dev manifest.
+3. **`uv run dbtp init`**: `uv run` installs the locked Python packages first. dbtp shows the repository settings (product name, team dev settings, deployment values), which the first developer filled in, and asks whether to change them: press Enter. Then it checks the login, suggests a **developer alias** (two letters of your first and last name), and writes the gitignored `./profiles.yml` with `schema: <product>__<alias>` in the team catalog. Then `dbt deps`.
 4. **`make clone-sources`**: shallow clones of every source into your own `…__src_clone` schema. By default your builds read these, not prod.
 5. **`make build`** (`dbt build`): builds and tests everything into your personal environment. The first dbt command opens a browser for dbt's own OAuth login.
 
@@ -69,9 +69,10 @@ note right
   Your CLI login (U2M OAuth),
   cached in the container
 end note
-:""make setup"";
+:""uv run dbtp init"";
 note right
-  * ""uv sync ~--locked"": .venv with dbt, sqlfluff, ...
+  * ""uv run"": .venv with dbt, sqlfluff, ... (uv.lock)
+  * repository settings: shown, kept (Enter)
   * alias suggested from your name, e.g. **jodo**
   * ./profiles.yml (gitignored):
     catalog = team catalog,
@@ -661,9 +662,10 @@ note right
   Sets the product name everywhere it is needed,
   config/dev-environment.toml and both targets
   of databricks.yml (warehouses, identities,
-  prod workspace and catalog, schedule)
+  prod workspace and catalog, schedule),
+  then your profiles.yml and dbt deps
 end note
-:""make setup clone-sources build"";
+:""make clone-sources build"";
 note right
   The sample models, seed and tests
   build without any changes

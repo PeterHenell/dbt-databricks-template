@@ -11,7 +11,7 @@ Developers may be on macOS, Linux or Windows. The toolkit (`make`, the `dbtp` to
 
 1. Clone the repository and open it in VS Code.
 2. Run **Dev Containers: Reopen in Container**. The first build takes a few minutes; it then runs `uv sync --locked`.
-3. In the container's terminal: `make setup`, then `make build` (`make help` lists the commands).
+3. In the container's terminal: `databricks auth login --host <dev-workspace-host>`, `uv run dbtp init`, then `make build` (`make help` lists the commands).
 
 ## What's in it
 

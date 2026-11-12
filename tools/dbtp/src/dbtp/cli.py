@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from dbtp import (__version__, build_changed, bundle, checks, devenv, init_product, local_engine,
-                  mr_build, personal, release, setup_dev)
+                  mr_build, personal, release)
 from dbtp.devenv import Project, SetupError
 
 PASSTHROUGH_HELP = "extra dbt arguments, after `--` (e.g. -- --exclude published)"
@@ -57,19 +57,21 @@ def build_parser() -> argparse.ArgumentParser:
     def command(name: str, help: str) -> argparse.ArgumentParser:
         return sub.add_parser(name, help=help, description=help)
 
-    init = command("init", "Once, in a new repository: set the data product name, the team's "
-                           "dev settings and the deployment values in databricks.yml")
+    init = command("init", "Once per clone: the repository settings (data product name, the "
+                           "team's dev settings, databricks.yml), then your personal "
+                           "environment (login check, profiles.yml, dbt deps)")
     init.add_argument("--product", help="data product name (lowercase, words joined by _)")
     for field in init_product.FIELDS:
         init.add_argument(field.option, *field.aliases, dest=field.name,
                           metavar=init_metavar(field), help=INIT_HELP[field.name])
+    init.add_argument("--alias", help="your developer alias, without asking")
+    init.add_argument("--no-profile", action="store_true",
+                      help="only the repository settings: no login check, profiles.yml or "
+                           "dbt deps")
     init.add_argument("--yes", action="store_true",
                       help="don't ask; leave values that aren't given as they are (a placeholder "
-                           "with a default gets the default)")
-
-    setup = command("setup", "Check the Databricks login, write your personal profiles.yml, dbt deps")
-    setup.add_argument("--alias", help="use this developer alias without asking")
-    setup.add_argument("--yes", action="store_true", help="accept all defaults (non-interactive)")
+                           "with a default gets the default), take the suggested alias and "
+                           "replace an existing profiles.yml")
 
     command("clone-sources", "(Re)create your shallow clones of every source")
     command("clean-dev", "Drop your whole personal environment (<product>__<alias>__*), after confirmation")
@@ -124,9 +126,8 @@ def dispatch(args: argparse.Namespace, project: Project) -> int:
         case "init":
             given = {name: getattr(args, name) for name in
                      ("product", *(field.name for field in init_product.FIELDS))}
-            return init_product.main(project, given, args.yes)
-        case "setup":
-            return setup_dev.main(project, args.alias, args.yes)
+            return init_product.run(project, given, args.alias, args.yes,
+                                    profile=not args.no_profile)
         case "clone-sources":
             return personal.clone_sources(project)
         case "clean-dev":

@@ -1,6 +1,9 @@
-"""`dbtp init`: turn a fresh copy of the template into one data product's repository.
+"""`dbtp init`: set up the repository and the developer's personal environment.
 
-Run once, right after creating the repository from the template:
+Every developer runs it once per clone. It has two parts:
+
+Repository settings (committed; the first developer fills them in, right after creating
+the repository from the template):
 
 1. Renames the data product: the current dbt project name (the template ships a
    working sample name) is replaced in every file that must repeat it.
@@ -8,6 +11,14 @@ Run once, right after creating the repository from the template:
 3. Writes every deployment value into `databricks.yml`: the `dev` target (the same dev
    workspace and product dev catalog as the dev settings, plus its SQL warehouse and
    identity), the whole `prod` target and the prod schedule.
+
+Once the team's dev settings are filled in, a later run shows them and asks whether
+to change them (default: no), so a developer who clones the repository just presses
+Enter. Options that set a value skip that question.
+
+Personal environment (`setup_dev`, skipped with `--no-profile`): checks the Databricks
+CLI login, asks for the developer alias, writes the gitignored `profiles.yml` and runs
+`dbt deps`. It needs the team's dev settings, so it waits until they are filled in.
 
 Workspaces and SQL warehouses are asked for as the Databricks UI shows them (server
 hostname, SQL warehouse ID) and accept what people paste from there: a bare hostname
@@ -33,7 +44,7 @@ from dataclasses import dataclass, fields
 
 import yaml
 
-from dbtp import bundle, devenv, yaml_edit
+from dbtp import bundle, devenv, setup_dev, yaml_edit
 from dbtp.devenv import Project, SetupError
 
 # Files that must repeat the data product name (relative to the repository root).
@@ -346,7 +357,55 @@ def _shown(name: str, value: str | None) -> str | None:
     return bare_host(value) if FIELD[name].kind == "host" else value
 
 
+def dev_settings_complete(project: Project) -> bool:
+    """Whether the dev settings a personal profile needs have no placeholders left."""
+    try:
+        devenv.read_dev_config(project.dev_config)
+    except SetupError:
+        return False
+    return True
+
+
+def print_placeholders_left(project: Project) -> None:
+    left = placeholders_left(project)
+    if left:
+        print("\nStill to fill in (run `uv run dbtp init` again, or pass the option):")
+        for file, key, value, option in left:
+            print(f"  {file}: {key} = {value}" + (f"  ({option})" if option else ""))
+
+
+def keep_repository_settings(project: Project) -> bool:
+    """Show the filled-in settings and ask whether to change them (default: keep)."""
+    existing = current_values(project)
+    print(f"Data product: {devenv.read_product(project.dbt_project)}")
+    for field in FIELDS:
+        if field.name in existing:
+            print(f"  {field.question.split(' (')[0]}: {existing[field.name]}")
+    answer = input("Change the repository settings? [y/N]: ").strip().lower()
+    return answer not in ("y", "yes")
+
+
+def run(project: Project, given: dict[str, str | None], alias: str | None,
+        assume_yes: bool, profile: bool = True) -> int:
+    """`dbtp init`: the repository settings, then the personal environment."""
+    if (not assume_yes and all(value is None for value in given.values())
+            and dev_settings_complete(project) and keep_repository_settings(project)):
+        print_placeholders_left(project)
+    elif code := main(project, given, assume_yes):
+        return code
+    if not profile:
+        return 0
+    if not dev_settings_complete(project):
+        print("\nYour personal profiles.yml comes once the team's dev settings (server "
+              "hostname, SQL warehouse ID, team catalog) are filled in: run `uv run dbtp "
+              "init` again then.")
+        return 0
+    print()
+    return setup_dev.main(project, alias, assume_yes)
+
+
 def main(project: Project, given: dict[str, str | None], assume_yes: bool) -> int:
+    """The repository settings: product name, dev settings, databricks.yml."""
     current = devenv.read_product(project.dbt_project)
     existing = current_values(project)
     values = dict(given)
@@ -373,16 +432,8 @@ def main(project: Project, given: dict[str, str | None], assume_yes: bool) -> in
     changed = apply(project, settings)
     print(f"Data product: {settings.product}")
     print("Changed: " + (", ".join(changed) if changed else "nothing (already set)"))
-    left = placeholders_left(project)
-    if left:
-        print("\nStill to fill in (run `uv run dbtp init` again, or pass the option):")
-        for file, key, value, option in left:
-            print(f"  {file}: {key} = {value}" + (f"  ({option})" if option else ""))
-    print(
-        "\nNext:\n"
-        "  make setup          log in check, your personal profiles.yml, dbt deps\n"
-        "  make build          build and test the sample models in your personal environment\n"
-        "Service principals and GitLab settings: README.md, \"Turn the template into your\n"
-        "data product\"."
-    )
+    print_placeholders_left(project)
+    if changed:
+        print("Commit the changed files. Service principals and GitLab settings: README.md, "
+              "\"Turn the template into your data product\".")
     return 0
