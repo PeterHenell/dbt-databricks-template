@@ -88,7 +88,9 @@ def test_values_not_given_are_left_alone(project):
 
 @pytest.mark.parametrize(("field", "value"), [
     ("product", "Orders"), ("product", "my__orders"), ("product", "orders-x"),
-    ("host", "adb-1.azuredatabricks.net"), ("team_catalog", ""), ("warehouse_id", "<id>"),
+    ("host", "not a host"), ("host", "<dev-workspace-host>"), ("host", "https://<dev-workspace-host>"),
+    ("host", "localhost"), ("team_catalog", ""), ("warehouse_id", "<id>"), ("warehouse_id", ""),
+    ("warehouse_id", "/sql/1.0/warehouses/"),
 ])
 def test_invalid_values_are_refused(project, field, value):
     settings = init_product.Settings(product="orders")
@@ -96,6 +98,63 @@ def test_invalid_values_are_refused(project, field, value):
     with pytest.raises(SetupError):
         init_product.apply(project, settings)
     assert devenv.read_product(project.dbt_project) == "sample_product"
+
+
+@pytest.mark.parametrize("value", [
+    "dbc-x.cloud.databricks.com",
+    "https://dbc-x.cloud.databricks.com/",
+    "http://dbc-x.cloud.databricks.com",
+    "https://dbc-x.cloud.databricks.com/sql/warehouses/abc?o=1",
+    "  DBC-X.cloud.databricks.com  ",
+])
+def test_server_hostname_is_accepted_as_pasted_from_the_ui(project, value):
+    init_product.apply(project, init_product.Settings(product="sample_product", host=value))
+    assert 'host = "https://dbc-x.cloud.databricks.com"\n' in project.dev_config.read_text()
+    assert "host: https://dbc-x.cloud.databricks.com\n" in (project.root / "databricks.yml").read_text()
+
+
+@pytest.mark.parametrize("value", [
+    "9f612f879c29d440",
+    "/sql/1.0/warehouses/9f612f879c29d440",
+    "https://dbc-x.cloud.databricks.com/sql/warehouses/9f612f879c29d440?o=1",
+])
+def test_warehouse_id_is_accepted_as_pasted_from_the_ui(project, value):
+    init_product.apply(project, init_product.Settings(product="sample_product", warehouse_id=value))
+    assert 'warehouse_id = "9f612f879c29d440"' in project.dev_config.read_text()
+
+
+@pytest.mark.parametrize("option", ["--host", "--server-hostname"])
+def test_host_and_server_hostname_options_are_the_same(project, monkeypatch, option):
+    monkeypatch.chdir(project.root)
+    assert cli.main(["init", option, "dbc-x.cloud.databricks.com", "--yes"]) == 0
+    assert 'host = "https://dbc-x.cloud.databricks.com"' in project.dev_config.read_text()
+
+
+def test_rerun_shows_the_hostname_without_scheme(project, monkeypatch):
+    init_product.apply(project, init_product.Settings(
+        product="sample_product", host="https://dbc-x.cloud.databricks.com"))
+    prompts = []
+
+    def answer(prompt):
+        prompts.append(prompt)
+        return ""
+
+    monkeypatch.setattr("builtins.input", answer)
+    assert init_product.main(project, {}, assume_yes=False) == 0
+    host_prompt = next(p for p in prompts if p.startswith("Server hostname"))
+    assert host_prompt.endswith("[dbc-x.cloud.databricks.com]: ")
+    assert 'host = "https://dbc-x.cloud.databricks.com"\n' in project.dev_config.read_text()
+
+
+def test_interactive_asks_again_after_an_invalid_answer(project, monkeypatch, capsys):
+    answers = iter(["orders", "not a host", "dbc-x.cloud.databricks.com",
+                    "<id>", "/sql/1.0/warehouses/abc123", "team_y", ""])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+    assert init_product.main(project, {}, assume_yes=False) == 0
+    config = devenv.read_dev_config(project.dev_config)
+    assert (config.host, config.warehouse_id) == ("https://dbc-x.cloud.databricks.com", "abc123")
+    out = capsys.readouterr().out
+    assert "is not a server hostname" in out and "is not a SQL warehouse ID" in out
 
 
 def test_cli_non_interactive(project, monkeypatch, capsys):

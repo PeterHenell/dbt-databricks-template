@@ -35,8 +35,13 @@ def build_parser() -> argparse.ArgumentParser:
     init = command("init", "Once, in a new repository: set the data product name and the team's "
                            "dev settings")
     init.add_argument("--product", help="data product name (lowercase, words joined by _)")
-    init.add_argument("--host", help="dev workspace URL, https://…")
-    init.add_argument("--warehouse-id", help="the team's shared SQL warehouse in the dev workspace")
+    init.add_argument("--server-hostname", "--host", dest="host", metavar="HOSTNAME",
+                      help="server hostname of the dev workspace (SQL Warehouses → your "
+                           "warehouse → Connection details), e.g. "
+                           "dbc-1234abcd-5678.cloud.databricks.com; a workspace URL works too")
+    init.add_argument("--warehouse-id", help="SQL warehouse ID of the team's shared warehouse "
+                                             "(shown next to the warehouse name; the HTTP path "
+                                             "from Connection details works too)")
     init.add_argument("--team-catalog", help="the team catalog (personal environments, MR builds)")
     init.add_argument("--product-dev-catalog", help="the product dev catalog")
     init.add_argument("--yes", action="store_true",
