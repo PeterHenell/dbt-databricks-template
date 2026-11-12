@@ -33,15 +33,9 @@ Where things live:
 | Product dev | product dev catalog, `<layer>` | the release pipeline (product dev identity) |
 | Product prod | product prod catalog, `<layer>` | the prod job on its schedule (product prod identity) |
 
-**Changing a diagram:** the sources are the `.puml` files in [`diagrams/`](diagrams/), and this page shows the committed `.svg` next to each (GitHub and many GitLab instances don't render PlantUML in Markdown). Edit the `.puml` file, render the SVGs on the host (needs Podman or Docker; with Docker, use `docker` and `--user "$(id -u):$(id -g)"` instead of `--userns=keep-id`), and commit both files:
+**Diagrams** are PlantUML code blocks in this page. GitLab draws them when PlantUML is enabled on the instance (it is on gitlab.com; on a self-managed GitLab an admin turns it on under **Admin → Settings → General → PlantUML**). Elsewhere, such as on GitHub, they show as source. To change a diagram, edit its block here.
 
-```sh
-podman run --rm --userns=keep-id -e JAVA_TOOL_OPTIONS=-Duser.home=/tmp \
-  -v "$PWD/docs/diagrams:/data:Z" docker.io/plantuml/plantuml:1.2025.4 \
-  -tsvg -charset UTF-8 "/data/*.puml"
-```
-
-In the source, `~` before `__` or `--` stops PlantUML from reading them as underline or strikethrough; it isn't shown in the rendered diagram.
+In a diagram, `~` before `__` or `--` stops PlantUML from reading them as underline or strikethrough; it isn't shown in the rendered diagram.
 
 ---
 
@@ -57,9 +51,66 @@ You need: access to the dev workspace, and the team catalog (ask the platform te
 
 Nothing you run can write outside `<product>__<alias>*`: the schema name always comes from your profile ([`generate_schema_name.sql`](../tools/dbt_platform/macros/generate_schema_name.sql) in the platform package). `make clean-dev` drops the whole environment when you want to start over.
 
-![0. Set up your environment and run dbt](diagrams/workflow-0-setup.svg)
+```plantuml
+@startuml workflow-0-setup
+title 0. Set up your environment and run dbt
 
-Source: [`diagrams/workflow-0-setup.puml`](diagrams/workflow-0-setup.puml)
+|Developer (dev container)|
+start
+:Clone the repository and open it in VS Code;
+:**Reopen in Container**;
+note right
+  Dev container with pinned uv,
+  Databricks CLI, Python
+  (.devcontainer/)
+end note
+:""databricks auth login ~--host <dev-workspace-host>"";
+note right
+  Your CLI login (U2M OAuth),
+  cached in the container
+end note
+:""make setup"";
+note right
+  * ""uv sync ~--locked"": .venv with dbt, sqlfluff, ...
+  * alias suggested from your name, e.g. **jodo**
+  * ./profiles.yml (gitignored):
+    catalog = team catalog,
+    schema = sample_product~__jodo
+  * dbt_packages/ (""dbt deps"")
+end note
+:""make clone-sources"";
+|Databricks (dev workspace)|
+:Shallow clone of every source table;
+note right
+  sample_product~__jodo~__src_clone
+  .crm~__customers, .crm~__orders, ...
+  (no data copied)
+end note
+|Developer (dev container)|
+:""make build"";
+note right
+  First run: browser OAuth login for dbt
+end note
+|Databricks (dev workspace)|
+:Models built and tested on the team SQL warehouse;
+note right
+  sample_product~__jodo~__staging
+  sample_product~__jodo~__intermediate
+  sample_product~__jodo~__published
+  target/ (manifest, run_results) locally
+end note
+|Developer (dev container)|
+if (Start over?) then (yes)
+  :""make clean-dev"";
+  note right
+    Lists sample_product~__jodo*,
+    drops them after you type "yes"
+  end note
+else (no)
+endif
+stop
+@enduml
+```
 
 ---
 
@@ -73,9 +124,79 @@ The inner loop runs in your personal environment; the MR pipeline is the gate. *
 4. **Push and open a merge request.** The pipeline runs the static checks and then the **MR build**: it drops `<product>__mr__*` and builds the whole project into it from prod sources, as the team identity. MR builds run one at a time (`resource_group: mr-build`), so a second MR waits for the first.
 5. **Review and merge.** The `main` pipeline runs the static checks again. Nothing is deployed.
 
-![1. Develop a feature up to a merge request](diagrams/workflow-1-feature.svg)
+```plantuml
+@startuml workflow-1-feature
+title 1. Develop a feature up to a merge request
 
-Source: [`diagrams/workflow-1-feature.puml`](diagrams/workflow-1-feature.puml)
+|Developer (dev container)|
+start
+:""git switch main && git pull""
+""git switch -c feature/<name>"";
+repeat
+  :Edit models/, macros/, YAML;
+  if (Build what?) then (a model and its neighbours)
+    :""make build SELECT=+customers+"";
+  else (only what changed)
+    :""make build-changed"";
+    note right
+      Downloads latest/manifest.json from
+      /Volumes/<product_dev_catalog>/_dbt_artifacts/state
+      to target/product-dev-state/, then
+      ""dbt build ~--select state:modified+ ~--defer""
+      Unchanged parents are read from product dev
+    end note
+  endif
+  |Databricks (dev workspace)|
+  :Build + tests in your personal environment;
+  note right
+    sample_product~__jodo~__<layer>
+  end note
+  |Developer (dev container)|
+repeat while (Tests green and result looks right?) is (no)
+->yes;
+:""make lint parse"";
+note right
+  sqlfluff + yamllint;
+  offline ""dbt parse"" with deploy/profiles.yml
+end note
+:""make test-tooling""  (if you changed tools/dbtp/, macros, bundle or CI);
+:""git commit"" / ""git push -u origin feature/<name>""
+Open a merge request;
+|GitLab CI|
+fork
+  :lint, tooling-tests;
+fork again
+  :bundle-validate (team identity);
+fork again
+  :SAST, secret detection;
+end fork
+:mr-build  (""dbtp mr-build"", one MR at a time);
+|Databricks (dev workspace)|
+:Drop sample_product~__mr~__*;
+:Full ""dbt build ~--target mr"" from prod sources;
+note right
+  sample_product~__mr~__staging, ~__intermediate,
+  ~__published in the team catalog
+  (overwritten by the next MR build)
+end note
+|GitLab CI|
+if (Pipeline green?) then (yes)
+  |Developer (dev container)|
+  :Review, approve, **merge** to main;
+  |GitLab CI|
+  :main pipeline: static checks only;
+  note right
+    Nothing is deployed.
+    main can be ahead of product dev and prod.
+  end note
+  stop
+else (no)
+  |Developer (dev container)|
+  :Fix on the branch, push again;
+  stop
+endif
+@enduml
+```
 
 ---
 
@@ -90,9 +211,76 @@ Releases deploy, merges don't (ADR 0007). A release is a GitLab release (and its
 5. **`validate-prod`** validates the same artifact against the prod target.
 6. **Approve and start `deploy-prod`** (manual). It deploys the same artifact to prod and does **not** start a run: the prod schedule builds the new version at its next run.
 
-![2. Release and deploy](diagrams/workflow-2-release.svg)
+```plantuml
+@startuml workflow-2-release
+title 2. Release and deploy
 
-Source: [`diagrams/workflow-2-release.puml`](diagrams/workflow-2-release.puml)
+|Release manager|
+start
+:GitLab: Deploy > Releases > **New release**
+tag ""v1.4.0"" on a main commit;
+|GitLab CI|
+:release-check  (""dbtp release check-tag"");
+note right
+  Tag is a valid package version,
+  its commit is on main
+end note
+:release-artifact  (""dbtp release publish"");
+note right
+  ""dbt deps"", then the archive
+  **sample_product-v1.4.0.tar.gz**
+  (databricks.yml, resources/, deploy/, models/,
+  macros/, dbt_packages/, RELEASE.json)
+  stored once in the package registry
+end note
+:product-dev  (""dbtp release fetch"", ""bundle deploy"", ""bundle run"")
+as the product dev identity;
+|Databricks (dev workspace)|
+:""bundle deploy -t dev"";
+note right
+  Job "dbt_build" (no schedule),
+  schema _dbt_artifacts, volume state
+  in the product dev catalog
+end note
+:Job run: task dbt_build (""dbt build ~--target prod"");
+note right
+  staging, intermediate, published
+  in the product dev catalog
+end note
+:Job run: task publish_dbt_artifacts;
+note right
+  /Volumes/<product_dev_catalog>/_dbt_artifacts/state/
+    runs/<run_id>/manifest.json, run_results.json
+    latest/  (what ""make build-changed"" uses)
+end note
+|GitLab CI|
+if (Product dev run green?) then (no)
+  :Pipeline fails, release stops;
+  note right: See workflow 7
+  stop
+else (yes)
+endif
+:validate-prod  (""dbtp bundle validate -t prod"")
+same archive, product prod identity;
+|Release manager|
+:Approve (Premium/Ultimate) and start **deploy-prod**;
+|GitLab CI|
+:deploy-prod  (""dbtp release fetch"", ""bundle deploy -t prod"");
+|Databricks (prod workspace)|
+:""bundle deploy -t prod"";
+note right
+  Job "dbt_build" with the cron schedule,
+  updated to v1.4.0. **No run started.**
+  GitLab environment "prod" shows v1.4.0
+end note
+:Next scheduled run builds v1.4.0;
+note right
+  Data in the product prod catalog,
+  artifacts in its _dbt_artifacts.state volume
+end note
+stop
+@enduml
+```
 
 ---
 
@@ -102,9 +290,44 @@ Consumers read the published interface from the `published` schema. A breaking c
 
 Non-breaking changes (a new column, a fix that keeps the contract) go through the normal feature flow.
 
-![3. Make a breaking change to the published interface](diagrams/workflow-3-breaking.svg)
+```plantuml
+@startuml workflow-3-breaking
+title 3. Make a breaking change to the published interface
 
-Source: [`diagrams/workflow-3-breaking.puml`](diagrams/workflow-3-breaking.puml)
+|Developer (dev container)|
+start
+:Find out who reads the published model;
+:Agree the change and a date with its consumers;
+note right
+  Breaking: a column removed or renamed,
+  a type or the grain changed.
+  Nothing in the build stops it (ADR 0010):
+  the team decides.
+end note
+:Branch from main (as in workflow 1);
+:Change ""models/published/<model>.sql""
+and its columns in ""_published.yml"";
+:""make build SELECT=+<model>"";
+|Databricks (dev workspace)|
+:Model built against its new contract;
+note right
+  sample_product~__jodo~__published.<model>
+end note
+|Developer (dev container)|
+:""make lint parse"", push, open MR
+marked as a breaking change;
+|GitLab CI|
+:MR build: full build into ~__mr~__*;
+|Developer (dev container)|
+:Review checks the change and the
+consumer agreement; merge;
+:Release on the agreed date (workflow 2);
+|Databricks (prod workspace)|
+:Scheduled run builds the new contract
+into ""published.<model>"";
+stop
+@enduml
+```
 
 ---
 
@@ -120,9 +343,51 @@ On personal targets, `source()` reads your own copies of the sources, not prod (
 
 Shallow clones copy no data; they reference the prod files at the moment of cloning, so they don't see newer prod data. Run `make clone-sources` again when you need fresher data, after you add a source, or when a clone breaks because prod ran `VACUUM` and removed files the clone still references. Views can't be shallow-cloned: the clone schema gets a view of the same name that reads prod. MR builds and deployed jobs always read prod; the mode is ignored there.
 
-![4. Create and refresh source clones](diagrams/workflow-4-clones.svg)
+```plantuml
+@startuml workflow-4-clones
+title 4. Create and refresh source clones
 
-Source: [`diagrams/workflow-4-clones.puml`](diagrams/workflow-4-clones.puml)
+|Developer (dev container)|
+start
+if (Why?) then (first time, new source,\nstale data, or\n"file not found" after prod VACUUM)
+  :""make clone-sources"";
+  |Databricks (dev workspace)|
+  :Create schema sample_product~__jodo~__src_clone (if missing);
+  :For each declared source;
+  if (Source is a table?) then (yes)
+    :""CREATE OR REPLACE TABLE ... SHALLOW CLONE <prod table>"";
+    note right
+      sample_product~__jodo~__src_clone.crm~__orders, ...
+      Points at prod's current files, copies nothing
+    end note
+  else (view)
+    :""CREATE OR REPLACE VIEW ... AS SELECT * FROM <prod view>"";
+    note right: Always reads prod
+  endif
+  |Developer (dev container)|
+  :Output: "Shallow-cloned N source table(s) ..."
+  (fails if a source table doesn't exist in prod);
+  :""uv run dbt build"";
+  note right
+    Default mode **clone**: staging models read
+    sample_product~__jodo~__src_clone.*
+  end note
+else (one run against\ncurrent prod data)
+  :""uv run dbt build ~--vars '{dev_source_mode: prod}'"";
+  note right
+    Reads prod sources directly;
+    nothing is cloned
+  end note
+endif
+|Databricks (dev workspace)|
+:Models rebuilt in sample_product~__jodo~__<layer>;
+note right
+  ""dev_source_mode: sample"" is reserved:
+  how samples are made is not decided yet
+end note
+stop
+@enduml
+```
 
 ---
 
@@ -134,9 +399,53 @@ This needs, once per project: "Allow job retries for rollback deployments" under
 
 Then fix forward: fix on `main` through an MR and make a new release.
 
-![5. Roll back a broken release (v1.5.0 -> v1.4.0)](diagrams/workflow-5-rollback.svg)
+```plantuml
+@startuml workflow-5-rollback
+title 5. Roll back a broken release (v1.5.0 -> v1.4.0)
 
-Source: [`diagrams/workflow-5-rollback.puml`](diagrams/workflow-5-rollback.puml)
+|Release manager|
+start
+:Notice: v1.5.0 broke prod;
+:GitLab: Operate > Environments > **prod**
+(or the v1.4.0 release's pipeline);
+:Re-run **deploy-prod** of ""v1.4.0"";
+note right
+  Needs "Allow job retries for
+  rollback deployments" enabled
+end note
+|GitLab CI|
+:deploy-prod  (""dbtp release fetch"", ""bundle deploy -t prod"");
+note right
+  Downloads the stored
+  sample_product-v1.4.0.tar.gz
+  (not rebuilt from today's code)
+end note
+|Databricks (prod workspace)|
+:""bundle deploy -t prod"";
+note right
+  Job definition and code back to v1.4.0.
+  GitLab environment "prod" shows v1.4.0.
+  **Data still as v1.5.0 wrote it.**
+end note
+if (Can the data wait for the next scheduled run?) then (yes)
+  :Next scheduled run rebuilds with v1.4.0;
+else (no)
+  |Release manager|
+  :Start the prod job "dbt_build" by hand
+  (Databricks UI: Jobs > Run now);
+  |Databricks (prod workspace)|
+  :Run rebuilds the data with v1.4.0;
+endif
+:Data back to v1.4.0's logic;
+note right
+  New _dbt_artifacts.state/runs/<run_id>/ and latest/
+end note
+|Developer (dev container)|
+:Fix forward: branch, fix, MR (workflow 1);
+:New release ""v1.5.1"" (workflow 2);
+stop
+@enduml
+```
 
 ---
 
@@ -146,9 +455,54 @@ Source: [`diagrams/workflow-5-rollback.puml`](diagrams/workflow-5-rollback.puml)
 
 When you really can't release what's on `main`, the documented route is to branch from the release tag, fix, and tag a release on that branch. `release-check` refuses that tag on purpose (its commit is not on `main`), so a maintainer has to bypass the check deliberately. The fix must then be brought into `main`, or the next release brings the bug back. Everything after `release-check` is the normal release: the same artifact goes to product dev, is tested there, and then goes to prod.
 
-![6. Release a fix that is not on main (hotfix, exceptional)](diagrams/workflow-6-hotfix.svg)
+```plantuml
+@startuml workflow-6-hotfix
+title 6. Release a fix that is not on main (hotfix, exceptional)
 
-Source: [`diagrams/workflow-6-hotfix.puml`](diagrams/workflow-6-hotfix.puml)
+|Developer (dev container)|
+start
+if (Can main be released as it is?) then (yes, the default)
+  :Fix on a feature branch, MR, merge (workflow 1);
+  :Release from main, e.g. ""v1.5.1"" (workflow 2);
+  stop
+else (no, main holds unreleasable work)
+endif
+:""git switch -c hotfix/v1.5.1 v1.5.0"";
+:Fix; ""uv run dbt build ~--select <changed>+""
+in your personal environment;
+:""git push"" the hotfix branch;
+note right
+  Optional: open an MR from the hotfix branch
+  for review and an MR build
+end note
+|Maintainer|
+:Decide to bypass the "tag is on main" rule
+(e.g. temporarily change ""ci-release-check"");
+note right
+  Deliberate and visible in the history.
+  Without it, release-check refuses the tag.
+end note
+:Create release ""v1.5.1"" on the hotfix branch commit;
+|GitLab CI|
+:release-artifact > product-dev (deploy + run)
+> validate-prod > manual deploy-prod;
+note right
+  sample_product-v1.5.1.tar.gz built from
+  the hotfix branch; tested in product dev
+end note
+|Databricks (prod workspace)|
+:Prod job updated to v1.5.1;
+|Maintainer|
+:Undo the ""ci-release-check"" bypass;
+|Developer (dev container)|
+:Cherry-pick the fix into main via an MR;
+note right
+  Otherwise the next release from main
+  brings the bug back
+end note
+stop
+@enduml
+```
 
 ---
 
@@ -156,9 +510,42 @@ Source: [`diagrams/workflow-6-hotfix.puml`](diagrams/workflow-6-hotfix.puml)
 
 The product dev run is the release's test. When it fails, nothing reaches prod. The failed tag can't be "fixed": re-running its pipeline redeploys the same stored artifact. Fix on `main` and make a new release with a new tag. Product dev keeps the failed candidate deployed until then; `make build-changed` keeps using the manifest of the last **successful** run, because artifacts are only published after a green build.
 
-![7. A release fails in product dev](diagrams/workflow-7-failed-release.svg)
+```plantuml
+@startuml workflow-7-failed-release
+title 7. A release fails in product dev
 
-Source: [`diagrams/workflow-7-failed-release.puml`](diagrams/workflow-7-failed-release.puml)
+|GitLab CI|
+start
+:product-dev job fails (v1.6.0);
+|Databricks (dev workspace)|
+note right
+  Product dev catalog: partly built by v1.6.0.
+  _dbt_artifacts.state/latest/ still from the
+  last successful run (publish task didn't run)
+end note
+|Developer (dev container)|
+:Read the failing dbt output
+(GitLab job log, or the Databricks job run);
+if (Transient? e.g. warehouse or network) then (yes)
+  :Retry the product-dev job;
+  note right
+    Same stored archive, deployed and run again
+  end note
+  stop
+else (no, a real bug)
+endif
+:Reproduce: ""uv run dbt build ~--select <failing model>+""
+(maybe with ""~--vars '{dev_source_mode: prod}'"");
+:Fix on a branch, MR, merge (workflow 1);
+|Release manager|
+:New release ""v1.6.1"" (workflow 2);
+note right
+  v1.6.0 is never deployed to prod.
+  Its package stays in the registry.
+end note
+stop
+@enduml
+```
 
 ---
 
@@ -166,9 +553,44 @@ Source: [`diagrams/workflow-7-failed-release.puml`](diagrams/workflow-7-failed-r
 
 The source YAML names the source's prod location; every environment reads that, except personal environments, which read their clones. After adding the source, clone it before building in your environment (the default mode reads clones).
 
-![8. Add a new source](diagrams/workflow-8-new-source.svg)
+```plantuml
+@startuml workflow-8-new-source
+title 8. Add a new source
 
-Source: [`diagrams/workflow-8-new-source.puml`](diagrams/workflow-8-new-source.puml)
+|Developer (dev container)|
+start
+:Ask the platform team for read access
+from the dev workspace and from the job identities;
+:Create ""models/staging/crm/_crm~__sources.yml""
+with the prod catalog and schema
+(database only when target.type == 'databricks');
+:Add ""stg_crm~__<entity>.sql"" views;
+:""make clone-sources"";
+|Databricks (dev workspace)|
+:Clone of the new tables;
+note right
+  sample_product~__jodo~__src_clone.crm~__<table>
+end note
+|Developer (dev container)|
+:""uv run dbt build ~--select +stg_crm~__*"";
+|Databricks (dev workspace)|
+:Staging views on your clones;
+note right
+  sample_product~__jodo~__staging.stg_crm~__<entity>
+end note
+|Developer (dev container)|
+:Add the table to ""local/sources.sql""
+if the local engine should build it;
+:""make lint parse"", MR (workflow 1);
+|GitLab CI|
+:MR build reads the new prod source;
+note right
+  Fails here if the team identity
+  has no read access
+end note
+stop
+@enduml
+```
 
 ---
 
@@ -176,9 +598,45 @@ Source: [`diagrams/workflow-8-new-source.puml`](diagrams/workflow-8-new-source.p
 
 `local/` runs the project on Apache Spark + Delta Lake in containers, through dbt-spark. Use it offline, or to try a change without a warehouse. Run these on the **host** (Podman or Docker, plus uv for `dbtp`), not in the dev container. There is no Unity Catalog locally, and a green local build doesn't replace a Databricks build.
 
-![10. Try a change on the local engine](diagrams/workflow-10-local.svg)
+```plantuml
+@startuml workflow-10-local
+title 10. Try a change on the local engine
 
-Source: [`diagrams/workflow-10-local.puml`](diagrams/workflow-10-local.puml)
+|Developer (host shell)|
+start
+:""make local-sources"";
+|Local containers|
+:Build the dbt image, start Postgres (Hive metastore);
+:Run local/sources.sql;
+note right
+  Small stand-in source tables
+  in a local Spark warehouse
+end note
+|Developer (host shell)|
+:""make local-dbt ARGS="run-operation clone_sources""" (optional);
+note right
+  sample_product~__local~__src_clone.*
+  (LOCAL_ALIAS=... to change "local")
+end note
+repeat
+  :Edit models;
+  :""make local-dbt""  (or ""ARGS="build ~--select customers""");
+  |Local containers|
+  :dbt build with dbt-spark;
+  note right
+    sample_product~__local~__staging,
+    ~__intermediate, ~__published
+  end note
+  |Developer (host shell)|
+repeat while (Looks right?) is (no)
+->yes;
+:Inspect: ""make local-sql"";
+:""make local-down"" (keeps data)
+or ""make local-clean"" (deletes it);
+:Continue on Databricks: workflow 1;
+stop
+@enduml
+```
 
 ---
 
@@ -186,6 +644,46 @@ Source: [`diagrams/workflow-10-local.puml`](diagrams/workflow-10-local.puml)
 
 Once per data product. The full checklist is in [`README.md`](../README.md); this is its shape.
 
-![11. Create a new data product from the template](diagrams/workflow-11-new-product.svg)
+```plantuml
+@startuml workflow-11-new-product
+title 11. Create a new data product from the template
 
-Source: [`diagrams/workflow-11-new-product.puml`](diagrams/workflow-11-new-product.puml)
+|Product team|
+start
+:Ask the platform team for: team catalog (if new),
+product dev + prod catalogs, SQL warehouses,
+3 service principals, OIDC policy (team identity),
+OAuth secrets (product identities);
+:GitLab: **New project from template**;
+:Open it in the dev container;
+:""uv run dbtp init"";
+note right
+  Sets the product name everywhere it is needed,
+  config/dev-environment.toml and the dev target
+  of databricks.yml
+end note
+:Fill in the prod <placeholders> in databricks.yml;
+:""make setup clone-sources build"";
+note right
+  The sample models, seed and tests
+  build without any changes
+end note
+:Replace the samples with your own sources and models
+(docs/first-models.md);
+|GitLab settings|
+:CI/CD variables: DATABRICKS_OIDC_AUDIENCE, TEAM_CLIENT_ID,
+PRODUCT_DEV_CLIENT_ID/_SECRET, PRODUCT_PROD_CLIENT_ID/_SECRET
+(product ones masked + protected);
+:Protected tags ""v*"", protected environment ""prod""
+with approvals (Premium/Ultimate),
+allow job retries for rollback deployments;
+|Product team|
+:Each developer: workflow 0;
+:First MR (workflow 1), first release (workflow 2);
+note right
+  After the first green product dev run,
+  ""make build-changed"" works
+end note
+stop
+@enduml
+```
