@@ -11,16 +11,63 @@ Python dependencies (dbtp itself among them) are installed by `uv sync` before t
 
 from __future__ import annotations
 
+import configparser
 import json
+import os
 import subprocess
 import urllib.request
+from pathlib import Path
 
 from dbtp import devenv
 from dbtp.devenv import Project, SetupError
 
 
-def cli_access_token(host: str) -> str:
-    """Access token from the Databricks CLI's U2M login cache for `host`."""
+def cli_config_path() -> Path:
+    """The Databricks CLI config file: `$DATABRICKS_CONFIG_FILE`, else `~/.databrickscfg`."""
+    configured = os.environ.get("DATABRICKS_CONFIG_FILE")
+    return Path(configured).expanduser() if configured else Path.home() / ".databrickscfg"
+
+
+def _normalize_host(host: str) -> str:
+    return host.strip().rstrip("/").lower()
+
+
+def cli_profile(host: str) -> str | None:
+    """The Databricks CLI profile that logs in to `host`, or None to fall back to `--host`.
+
+    Only profiles whose `host` is the dev host count, so a default profile for another
+    workspace is never used. Several matches (e.g. `databricks auth login` run twice)
+    are not an error: `[__settings__] default_profile` wins if it is one of them,
+    otherwise the first one in the file.
+    """
+    parser = configparser.ConfigParser(interpolation=None, default_section="__no_defaults__")
+    try:
+        parser.read(cli_config_path())
+    except configparser.Error:
+        return None
+    wanted = _normalize_host(host)
+    matches = [
+        name for name in parser.sections()
+        if name != "__settings__" and _normalize_host(parser[name].get("host", "")) == wanted
+    ]
+    if not matches:
+        return None
+    if len(matches) == 1:
+        return matches[0]
+    default = parser.get("__settings__", "default_profile", fallback=None)
+    chosen = default if default in matches else matches[0]
+    others = ", ".join(name for name in matches if name != chosen)
+    print(f"Note: using Databricks CLI profile '{chosen}' for {host} (also matching: {others}).")
+    return chosen
+
+
+def cli_target_args(host: str, profile: str | None) -> list[str]:
+    """CLI arguments that select the developer's login: `--profile` if one matched, else `--host`."""
+    return ["--profile", profile] if profile else ["--host", host]
+
+
+def cli_access_token(host: str, profile: str | None) -> str:
+    """Access token from the Databricks CLI's U2M login for `host` (via `profile` if set)."""
     login_help = (
         "No valid Databricks CLI login for the dev workspace.\n"
         f"  Log in with:  databricks auth login --host {host}\n"
@@ -28,7 +75,7 @@ def cli_access_token(host: str) -> str:
     )
     try:
         result = subprocess.run(
-            ["databricks", "auth", "token", "--host", host, "-o", "json"],
+            ["databricks", "auth", "token", *cli_target_args(host, profile), "-o", "json"],
             capture_output=True,
             text=True,
             check=False,
@@ -38,6 +85,8 @@ def cli_access_token(host: str) -> str:
             "The Databricks CLI is not installed. See "
             "https://docs.databricks.com/dev-tools/cli/install.html"
         ) from None
+    if result.stderr.strip():
+        login_help = f"{login_help}\n  The Databricks CLI said:\n    {result.stderr.strip()}"
     try:
         token = json.loads(result.stdout)["access_token"]
     except (json.JSONDecodeError, KeyError, TypeError):
@@ -120,8 +169,10 @@ def main(project: Project, alias: str | None = None, assume_yes: bool = False) -
     product = project.product()
     config = devenv.read_dev_config(project.dev_config)
 
-    token = cli_access_token(config.host)
-    print(f"Databricks CLI login OK for {config.host}")
+    profile = cli_profile(config.host)
+    token = cli_access_token(config.host, profile)
+    login = f" (profile '{profile}')" if profile else ""
+    print(f"Databricks CLI login OK for {config.host}{login}")
 
     first, last = current_user_names(config.host, token)
     if not (first and last):
