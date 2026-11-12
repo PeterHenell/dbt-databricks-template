@@ -1,11 +1,12 @@
 # Daily developer commands. Every recipe runs dbt or forwards to the `dbtp` tooling
 # (tools/dbtp, installed by `uv sync`); no logic lives here. `make help` lists them.
 #
-# Not here on purpose: CI-only steps (release, MR build, deploy) are called as
-# `uv run dbtp …` straight from .gitlab-ci.yml, and rarely used commands (hand deploy,
-# rendering the diagrams) are in the docs (docs/ci-cd.md, docs/workflows.md).
+# Not here on purpose: the one-time setup of a clone is `uv run dbtp init` (README),
+# CI-only steps (release, MR build, deploy) are called as `uv run dbtp …` straight from
+# .gitlab-ci.yml, and rarely used commands (hand deploy, rendering the diagrams) are in
+# the docs (docs/ci-cd.md, docs/workflows.md).
 
-# Interactive targets (setup, clean-dev) must not run in parallel, even with `make -j`.
+# Interactive targets (clean-dev) must not run in parallel, even with `make -j`.
 .NOTPARALLEL:
 .DEFAULT_GOAL := help
 SHELL := bash
@@ -28,17 +29,11 @@ help: ## List the targets
 		/^[a-zA-Z_-]+:.*## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo
 	@echo "dbt targets take SELECT=..., SOURCE_MODE=prod and ARGS=\"...\", e.g. make build SELECT=+customers"
+	@echo "First time in this clone? Run \`uv run dbtp init\` (README, section 3)."
 
-##@ Setup
-
-.PHONY: setup
-setup: ## Install pinned tools, check the Databricks login, write your personal profiles.yml
-	$(UV) sync --locked
-	$(DBTP) setup
-
-# The dbt targets need the profile `make setup` writes.
+# The dbt targets need the profile `dbtp init` writes.
 profiles.yml:
-	@echo "No profiles.yml yet: run \`make setup\` first." >&2; exit 1
+	@echo "No profiles.yml yet: run \`uv run dbtp init\` first." >&2; exit 1
 
 ##@ dbt in your personal environment on Databricks (<product>__<alias>__*)
 

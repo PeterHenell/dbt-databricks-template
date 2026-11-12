@@ -17,7 +17,7 @@ nodes and sources.
 
 ## How a product repository uses it
 
-1. `packages.yml` installs it; `dbt deps` (run by `make setup`, `make parse`, the MR
+1. `packages.yml` installs it; `dbt deps` (run by `dbtp init`, `make parse`, the MR
    build and the release build) puts it in `dbt_packages/dbt_platform`:
 
    ```yaml

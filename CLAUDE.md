@@ -16,8 +16,8 @@ Two rules shape everything here:
 Run everything in the dev container (`.devcontainer/`, see `docs/dev-container.md`); the Makefile and dbtp assume Linux + bash. Python tools are pinned in `pyproject.toml` / `uv.lock`; run dbt and dbtp through `uv run`.
 
 ```sh
-uv run dbtp init                              # once per new repository: product name, team settings, databricks.yml values
-make setup                                    # uv sync, check Databricks CLI login, write ./profiles.yml, dbt deps
+uv run dbtp init                              # once per clone: product name, team settings, databricks.yml values (asked only
+                                              # until filled in), then check Databricks CLI login, write ./profiles.yml, dbt deps
 make clone-sources                            # (re)create your shallow clones of the sources
 make build                                    # dbt build into your personal environment
 make build SELECT=+customers                  # a model and everything upstream (also: make run, test, compile)
@@ -45,7 +45,7 @@ The Makefile holds only the developer's daily commands. CI-only steps are `uv ru
 
 ## How it works
 
-- **Personal environments** (`docs/workflows.md`, ADR 0001, 0005): team settings are in `config/dev-environment.toml`. `make setup` writes the gitignored `./profiles.yml` with `schema: <product>__<alias>` in the team catalog. On personal targets (`dev`, `local`) `source()` reads `<product>__<alias>__src_clone.<source>__<table>` (made by `make clone-sources`) unless `dev_source_mode: prod`; all other targets read prod.
+- **Personal environments** (`docs/workflows.md`, ADR 0001, 0005): team settings are in `config/dev-environment.toml`. `uv run dbtp init` writes the gitignored `./profiles.yml` with `schema: <product>__<alias>` in the team catalog. On personal targets (`dev`, `local`) `source()` reads `<product>__<alias>__src_clone.<source>__<table>` (made by `make clone-sources`) unless `dev_source_mode: prod`; all other targets read prod.
 - **Deployment** (`docs/ci-cd.md`): a Databricks Asset Bundle (`databricks.yml`, `resources/dbt_job.yml`) with targets `dev` (product dev) and `prod`. MR → static checks + MR build into `<product>__mr__*`; release tag → release artifact → deploy + run in product dev → manual `deploy-prod`. Prod-style builds use `deploy/profiles.yml` only with `--profiles-dir deploy`.
 - **Local engine** (`local/`, `make local-*`, on the host, not in the dev container): Spark + Delta in containers, for trying changes without Databricks. A green local build doesn't replace a Databricks build.
 

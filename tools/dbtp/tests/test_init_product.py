@@ -212,7 +212,7 @@ def test_interactive_questions_default_to_current_values(project, monkeypatch):
 
 def test_cli_fills_every_placeholder_from_options(project, monkeypatch, capsys):
     monkeypatch.chdir(project.root)
-    assert cli.main(["init", *ALL_OPTIONS, "--yes"]) == 0
+    assert cli.main(["init", *ALL_OPTIONS, "--no-profile", "--yes"]) == 0
     targets = bundle_of(project)["targets"]
     assert targets["dev"]["workspace"]["host"] == "https://dbc-dev.cloud.databricks.com"
     assert targets["dev"]["variables"] == {
@@ -252,10 +252,10 @@ def test_yes_keeps_filled_values_over_defaults(project):
 
 def test_rerun_changes_filled_values(project, monkeypatch):
     monkeypatch.chdir(project.root)
-    assert cli.main(["init", *ALL_OPTIONS, "--yes"]) == 0
+    assert cli.main(["init", *ALL_OPTIONS, "--no-profile", "--yes"]) == 0
     assert cli.main(["init", "--server-hostname", "dbc-new.cloud.databricks.com",
                      "--product-dev-catalog", "orders_dev2", "--product-prod-catalog", "p2",
-                     "--product-prod-service-principal", "sp2", "--yes"]) == 0
+                     "--product-prod-service-principal", "sp2", "--no-profile", "--yes"]) == 0
     targets = bundle_of(project)["targets"]
     assert targets["dev"]["workspace"]["host"] == "https://dbc-new.cloud.databricks.com"
     assert targets["dev"]["variables"]["catalog"] == "orders_dev2"
@@ -281,9 +281,10 @@ def test_interactive_defaults_follow_the_answers(project, monkeypatch):
 
 def test_rerun_shows_current_bundle_values(project, monkeypatch):
     monkeypatch.chdir(project.root)
-    assert cli.main(["init", *ALL_OPTIONS, "--yes"]) == 0
-    prompts = answering(monkeypatch)
-    assert init_product.main(project, {}, assume_yes=False) == 0
+    assert cli.main(["init", *ALL_OPTIONS, "--no-profile", "--yes"]) == 0
+    prompts = answering(monkeypatch, "y")
+    assert init_product.run(project, {}, None, assume_yes=False, profile=False) == 0
+    assert prompts[0] == "Change the repository settings? [y/N]: "
     assert any(p.startswith("Product prod identity") and p.endswith("[prod-sp-id]: ")
                for p in prompts)
     assert any(p.startswith("Server hostname of the prod workspace")
@@ -317,3 +318,51 @@ def test_invalid_deployment_values_are_refused(project, monkeypatch, option, val
     with pytest.raises(SystemExit):
         cli.main(["init", option, value, "--yes"])
     assert (project.root / "databricks.yml").read_text() == BUNDLE
+
+
+@pytest.fixture
+def profile_setup(monkeypatch):
+    """Record the personal part of init instead of logging in."""
+    calls = []
+    monkeypatch.setattr(init_product.setup_dev, "main",
+                        lambda proj, alias, yes: calls.append((alias, yes)) or 0)
+    return calls
+
+
+def test_configured_repository_keeps_its_settings_by_default(project, monkeypatch, capsys,
+                                                             profile_setup):
+    monkeypatch.chdir(project.root)
+    assert cli.main(["init", *ALL_OPTIONS, "--no-profile", "--yes"]) == 0
+    before = [(project.root / f).read_text() for f in ("databricks.yml", init_product.DEV_CONFIG)]
+    prompts = answering(monkeypatch)
+    assert init_product.run(project, {}, None, assume_yes=False) == 0
+    assert prompts == ["Change the repository settings? [y/N]: "]
+    assert [(project.root / f).read_text()
+            for f in ("databricks.yml", init_product.DEV_CONFIG)] == before
+    assert "Team catalog: team_x" in capsys.readouterr().out
+    assert profile_setup == [(None, False)]
+
+
+def test_init_writes_the_profile_after_the_repository_settings(project, monkeypatch,
+                                                               profile_setup):
+    monkeypatch.chdir(project.root)
+    assert cli.main(["init", *ALL_OPTIONS, "--alias", "pehe", "--yes"]) == 0
+    assert devenv.read_dev_config(project.dev_config).team_catalog == "team_x"
+    assert profile_setup == [("pehe", True)]
+
+
+def test_no_profile_until_the_dev_settings_are_filled_in(project, monkeypatch, capsys,
+                                                         profile_setup):
+    monkeypatch.chdir(project.root)
+    assert cli.main(["init", "--team-catalog", "team_x", "--yes"]) == 0
+    assert profile_setup == []
+    assert "Your personal profiles.yml comes once" in capsys.readouterr().out
+
+
+def test_options_skip_the_keep_question(project, monkeypatch, profile_setup):
+    monkeypatch.chdir(project.root)
+    assert cli.main(["init", *ALL_OPTIONS, "--no-profile", "--yes"]) == 0
+    prompts = answering(monkeypatch)
+    assert init_product.run(project, {"team_catalog": "team_z"}, None, assume_yes=False) == 0
+    assert "Change the repository settings? [y/N]: " not in prompts
+    assert devenv.read_dev_config(project.dev_config).team_catalog == "team_z"

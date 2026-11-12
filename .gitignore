@@ -1,4 +1,4 @@
-# Personal dev profile written by `make setup` (ADR 0002). Never commit it.
+# Personal dev profile written by `uv run dbtp init` (ADR 0002). Never commit it.
 /profiles.yml
 
 # dbt

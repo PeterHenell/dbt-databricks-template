@@ -1,7 +1,7 @@
 # The dbt project name IS the data product name (one repository = one data product).
 # It is the prefix of every personal environment (`<product>__<alias>__<layer>`) and
 # the profile name. dbt cannot read the profile name from a variable, so `profile`
-# must repeat it; `make setup` refuses to run if the two differ.
+# must repeat it; `dbtp` refuses to run if the two differ.
 name: sample_product
 profile: sample_product
 

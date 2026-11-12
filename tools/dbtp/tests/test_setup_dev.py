@@ -1,4 +1,4 @@
-"""Databricks CLI login lookup in `dbtp setup`, against a fake `databricks` CLI on PATH."""
+"""Databricks CLI login lookup in `dbtp init`, against a fake `databricks` CLI on PATH."""
 
 import pytest
 

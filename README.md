@@ -24,7 +24,7 @@ Terms in bold are defined in [`GLOSSARY.md`](GLOSSARY.md). Decisions and their r
 
 Create the repository from this template in GitLab (**New project → Create from template**), clone it and open it in the dev container ([`docs/dev-container.md`](docs/dev-container.md)). The template works as it is: its sample product, `sample_product`, has a source, models, a seed and tests that build without changes.
 
-1. **Initialize the repository** with your data product name and the team's dev settings:
+1. **Initialize the repository** with your data product name and the team's dev settings, and set up your own personal environment:
 
    ```sh
    uv run dbtp init
@@ -32,8 +32,8 @@ Create the repository from this template in GitLab (**New project → Create fro
 
    It asks for the data product name (lowercase letters and digits joined by single underscores, no `__`; it is also the dbt project name), then the team's dev settings: the dev workspace's **server hostname**, the **SQL warehouse ID** of the team's shared warehouse, the team catalog and the product dev catalog. Then the deployment values for `databricks.yml`: the product dev job's SQL warehouse (default: the team warehouse) and identity, the prod workspace (default: the dev workspace; one workspace for everything works, since environments are picked by catalog), the product prod catalog, the prod SQL warehouse (default: the product dev warehouse) and identity, and the prod schedule (a Quartz cron expression). Workspaces and warehouses are asked for as the UI shows them: the server hostname is under **SQL Warehouses → your warehouse → Connection details** (e.g. `dbc-1234abcd-5678.cloud.databricks.com`; a workspace URL from the browser works too), and the SQL warehouse ID is shown next to the warehouse name (or paste the **HTTP path** from Connection details). Identities are the **application IDs** of the product's service principals; press Enter to leave them (and the catalogs) for later.
 
-   It writes the name into every file that must repeat it (`dbt_project.yml`, `deploy/profiles.yml`, `databricks.yml`, `local/profiles.yml`), the dev settings into `config/dev-environment.toml`, and the deployment values into the `dev` and `prod` targets of `databricks.yml`, keeping the files' comments. At the end it lists every `<placeholder>` still left, with the option that fills it. Run it again to change any value (it shows the current ones); `uv run dbtp init --help` lists the options for running it without questions (`--yes`). `uv run dbtp bundle …` refuses a target that still has placeholders. Commit the result.
-2. **Build the samples** to check that your environment works: `make setup`, `make build` (section 3). Then follow [`docs/first-models.md`](docs/first-models.md) to add your own models.
+   It writes the name into every file that must repeat it (`dbt_project.yml`, `deploy/profiles.yml`, `databricks.yml`, `local/profiles.yml`), the dev settings into `config/dev-environment.toml`, and the deployment values into the `dev` and `prod` targets of `databricks.yml`, keeping the files' comments. At the end it lists every `<placeholder>` still left, with the option that fills it. Then it sets up your personal environment, as for every developer (section 3): it checks your Databricks CLI login, asks for your developer alias, writes your `profiles.yml` and runs `dbt deps`. Run it again to change any value (it shows the current ones and asks whether to change them); `uv run dbtp init --help` lists the options for running it without questions (`--yes`, and `--no-profile` for the repository settings only). `uv run dbtp bundle …` refuses a target that still has placeholders. Commit the changed files.
+2. **Build the samples** to check that your environment works: `make build` (section 3). Then follow [`docs/first-models.md`](docs/first-models.md) to add your own models.
 3. **Deployment settings:** the service principals, if you left them for later (`uv run dbtp init --product-dev-service-principal … --product-prod-service-principal … --yes`), and the GitLab settings (step 5).
 4. **Sources and models:** add your sources and replace the sample models (`models/staging/sample/`, which generate their own rows) and the sample seed with your own, as [`docs/first-models.md`](docs/first-models.md) shows. Keep the layers (`staging`, `intermediate`, `published`, `seeds`). Published models have enforced contracts; see [`docs/published-interface.md`](docs/published-interface.md) for how to change them.
 5. **GitLab settings** ([details](docs/ci-cd.md)):
@@ -47,8 +47,11 @@ Create the repository from this template in GitLab (**New project → Create fro
 Work in the dev container (`.devcontainer/`, see [`docs/dev-container.md`](docs/dev-container.md)). New to the project? [`docs/first-models.md`](docs/first-models.md) takes you from the sample models to your own. Once:
 
 ```sh
-make setup              # tools, Databricks login, your profiles.yml (asks for your developer alias), dbt deps
+databricks auth login --host <dev-workspace-host>   # your own Databricks CLI login (a browser opens)
+uv run dbtp init        # Python tools, login check, your profiles.yml (asks for your developer alias), dbt deps
 ```
+
+The repository settings are already filled in by then: `dbtp init` shows them and asks whether to change them, so press Enter.
 
 Then:
 

@@ -40,12 +40,13 @@ def test_local_dbt_takes_a_dbt_command():
     (["bundle", "deploy", "-t", "prod"], "bundle", "deploy", ("prod",)),
     (["bundle", "validate"], "bundle", "validate", ("dev", None)),
     (["build-changed", "--", "-x"], "build_changed", "main", (["-x"], None)),
-    (["setup", "--alias", "pehe", "--yes"], "setup_dev", "main", ("pehe", True)),
+    (["init", "--product", "orders", "--alias", "pehe", "--yes"], "init_product", "run",
+     ({"product": "orders", **{f.name: None for f in cli.init_product.FIELDS}}, "pehe", True)),
 ])
 def test_commands_are_routed(project, monkeypatch, argv, module, function, expected):
     calls = []
     monkeypatch.setattr(getattr(cli, module), function,
-                        lambda proj, *args: calls.append((proj.root, args)) or 7)
+                        lambda proj, *args, **_: calls.append((proj.root, args)) or 7)
     assert cli.main(argv) == 7
     assert calls == [(project.resolve(), expected)]
 

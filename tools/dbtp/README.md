@@ -11,8 +11,8 @@ the repository it works on at run time.
 ## How a product repository uses it
 
 - `pyproject.toml` depends on `dbtp`; `uv sync` installs it with dbt.
-- The `Makefile` has the developer's daily commands and forwards to it (`make setup`
-  runs `dbtp setup`). The CI pipeline calls the CI-only commands (`release …`,
+- A developer sets up a clone with `uv run dbtp init`. The `Makefile` has the
+  developer's daily commands and forwards to it. The CI pipeline calls the CI-only commands (`release …`,
   `bundle …`, `mr-build`) as `uv run dbtp …` directly.
 - `dbtp` works on the nearest directory upwards from the working directory that
   has a `dbt_project.yml`. `--project-dir` or `$DBTP_PROJECT_DIR` override that.
@@ -23,7 +23,7 @@ What dbtp reads from the product repository:
 |---|---|
 | `dbt_project.yml` | the data product name (`name`, repeated in `profile`) |
 | `config/dev-environment.toml` | dev workspace host, SQL warehouse, team and product dev catalogs |
-| `profiles.yml` (written by `dbtp setup`) | the developer's alias |
+| `profiles.yml` (written by `dbtp init`) | the developer's alias |
 | `deploy/profiles.yml` | `parse`, `mr-build` (deployment profile, ADR 0002) |
 | `databricks.yml`, `resources/` | `bundle …`, `release …` |
 | `local/compose.yml` | `local …` |
@@ -36,7 +36,9 @@ which the product repository installs with `dbt deps`.
 ## Commands
 
 ```text
-dbtp setup [--alias A] [--yes]       check the CLI login, write profiles.yml, dbt deps
+dbtp init [OPTIONS] [--alias A] [--no-profile] [--yes]
+                                     repository settings (product name, dev settings,
+                                     databricks.yml), then CLI login check, profiles.yml, dbt deps
 dbtp clone-sources                   (re)create your shallow source clones
 dbtp clean-dev                       drop your personal environment, after confirmation
 dbtp build-changed [-- DBT_ARGS]     state:modified+ build, deferring to product dev
