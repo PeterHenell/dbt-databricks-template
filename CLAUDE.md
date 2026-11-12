@@ -16,7 +16,7 @@ Two rules shape everything here:
 Run everything in the dev container (`.devcontainer/`, see `docs/dev-container.md`); the Makefile and dbtp assume Linux + bash. Python tools are pinned in `pyproject.toml` / `uv.lock`; run dbt and dbtp through `uv run`.
 
 ```sh
-uv run dbtp init                              # once per new repository: product name + team settings
+uv run dbtp init                              # once per new repository: product name, team settings, databricks.yml values
 make setup                                    # uv sync, check Databricks CLI login, write ./profiles.yml, dbt deps
 make clone-sources                            # (re)create your shallow clones of the sources
 make build                                    # dbt build into your personal environment

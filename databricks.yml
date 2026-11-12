@@ -2,8 +2,9 @@
 #
 # Environment-specific values live ONLY in the targets below (ADR 0008): the release
 # artifact is the same for product dev and prod, and the target picks host, catalog,
-# warehouse and identity at deploy time. Replace the <placeholders> when you create a
-# repository from the template; `dev` must agree with config/dev-environment.toml.
+# warehouse and identity at deploy time. `uv run dbtp init` fills the <placeholders>
+# (run it again to change a value); `dev` must agree with config/dev-environment.toml.
+# `dbtp bundle` refuses a target that still has a placeholder.
 #
 #   uv run dbtp bundle validate -t dev    uv run dbtp bundle deploy -t dev    uv run dbtp bundle run -t dev
 bundle:

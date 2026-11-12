@@ -1,6 +1,9 @@
-"""dbtp init: rename the data product and fill in the team's dev settings."""
+"""dbtp init: rename the data product, fill in the team's dev settings and databricks.yml."""
+
+import itertools
 
 import pytest
+import yaml
 
 from dbtp import cli, devenv, init_product
 from dbtp.devenv import Project, SetupError
@@ -16,20 +19,61 @@ team = "<team_catalog>"
 product_dev = "<product_dev_catalog>"
 '''
 
-BUNDLE = '''bundle:
+BUNDLE = '''# Replace the <placeholders>.
+bundle:
   name: sample_product
+
+variables:
+  schedule:
+    description: Quartz cron expression for the scheduled run (prod only).
+    default: "0 0 5 * * ?"
+
 targets:
+  # Product dev
   dev:
     workspace:
       host: https://<dev-workspace-host>
+      root_path: /Workspace/${bundle.name}
     variables:
       catalog: <product_dev_catalog>
+      warehouse_id: <product-dev-sql-warehouse-id>
+      service_principal: <product-dev-service-principal-application-id>
+
+  # Product prod
   prod:
     workspace:
       host: https://<prod-workspace-host>
     variables:
-      catalog: <product_prod_catalog>
+      catalog: <product_prod_catalog>  # the prod catalog
+      warehouse_id: <product-prod-sql-warehouse-id>
+      service_principal: <product-prod-service-principal-application-id>
 '''
+
+ALL_OPTIONS = [
+    "--server-hostname", "dbc-dev.cloud.databricks.com", "--warehouse-id", "teamwh",
+    "--team-catalog", "team_x", "--product-dev-catalog", "orders_dev",
+    "--product-dev-warehouse-id", "devwh", "--product-dev-service-principal", "dev-sp-id",
+    "--prod-server-hostname", "https://dbc-prod.cloud.databricks.com/", "--product-prod-catalog",
+    "orders_prod", "--product-prod-warehouse-id", "/sql/1.0/warehouses/prodwh",
+    "--product-prod-service-principal", "prod-sp-id", "--prod-schedule", "0 30 6 * * ?",
+]
+
+
+def bundle_of(project):
+    return yaml.safe_load((project.root / "databricks.yml").read_text())
+
+
+def answering(monkeypatch, *answers):
+    """Answer the questions in order, then Enter for every question after them."""
+    prompts = []
+    queue = itertools.chain(answers, itertools.repeat(""))
+
+    def answer(prompt):
+        prompts.append(prompt)
+        return next(queue)
+
+    monkeypatch.setattr("builtins.input", answer)
+    return prompts
 
 
 @pytest.fixture
@@ -133,13 +177,7 @@ def test_host_and_server_hostname_options_are_the_same(project, monkeypatch, opt
 def test_rerun_shows_the_hostname_without_scheme(project, monkeypatch):
     init_product.apply(project, init_product.Settings(
         product="sample_product", host="https://dbc-x.cloud.databricks.com"))
-    prompts = []
-
-    def answer(prompt):
-        prompts.append(prompt)
-        return ""
-
-    monkeypatch.setattr("builtins.input", answer)
+    prompts = answering(monkeypatch)
     assert init_product.main(project, {}, assume_yes=False) == 0
     host_prompt = next(p for p in prompts if p.startswith("Server hostname"))
     assert host_prompt.endswith("[dbc-x.cloud.databricks.com]: ")
@@ -147,9 +185,8 @@ def test_rerun_shows_the_hostname_without_scheme(project, monkeypatch):
 
 
 def test_interactive_asks_again_after_an_invalid_answer(project, monkeypatch, capsys):
-    answers = iter(["orders", "not a host", "dbc-x.cloud.databricks.com",
-                    "<id>", "/sql/1.0/warehouses/abc123", "team_y", ""])
-    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+    answering(monkeypatch, "orders", "not a host", "dbc-x.cloud.databricks.com",
+              "<id>", "/sql/1.0/warehouses/abc123", "team_y", "")
     assert init_product.main(project, {}, assume_yes=False) == 0
     config = devenv.read_dev_config(project.dev_config)
     assert (config.host, config.warehouse_id) == ("https://dbc-x.cloud.databricks.com", "abc123")
@@ -167,8 +204,116 @@ def test_cli_non_interactive(project, monkeypatch, capsys):
 
 
 def test_interactive_questions_default_to_current_values(project, monkeypatch):
-    answers = iter(["orders", "https://adb-2.net", "wh2", "team_y", ""])
-    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+    answering(monkeypatch, "orders", "https://adb-2.net", "wh2", "team_y", "")
     assert init_product.main(project, {}, assume_yes=False) == 0
     assert devenv.read_dev_config(project.dev_config).team_catalog == "team_y"
     assert "<product_dev_catalog>" in project.dev_config.read_text()  # left for later
+
+
+def test_cli_fills_every_placeholder_from_options(project, monkeypatch, capsys):
+    monkeypatch.chdir(project.root)
+    assert cli.main(["init", *ALL_OPTIONS, "--yes"]) == 0
+    targets = bundle_of(project)["targets"]
+    assert targets["dev"]["workspace"]["host"] == "https://dbc-dev.cloud.databricks.com"
+    assert targets["dev"]["variables"] == {
+        "catalog": "orders_dev", "warehouse_id": "devwh", "service_principal": "dev-sp-id"}
+    assert targets["prod"]["workspace"]["host"] == "https://dbc-prod.cloud.databricks.com"
+    assert targets["prod"]["variables"] == {
+        "catalog": "orders_prod", "warehouse_id": "prodwh", "service_principal": "prod-sp-id"}
+    assert bundle_of(project)["variables"]["schedule"]["default"] == "0 30 6 * * ?"
+    text = (project.root / "databricks.yml").read_text()
+    assert "<" not in text.split("\n", 1)[1]  # only the comment on the first line mentions them
+    for comment in ("# Product prod", "  # the prod catalog", "description: Quartz cron"):
+        assert comment in text
+    assert 'default: "0 30 6 * * ?"' in text  # stays quoted
+    assert init_product.placeholders_left(project) == []
+    assert "Still to fill in" not in capsys.readouterr().out
+
+
+def test_yes_fills_placeholders_with_their_defaults(project):
+    assert init_product.main(project, {"host": "dbc-dev.cloud.databricks.com",
+                                       "warehouse_id": "teamwh"}, assume_yes=True) == 0
+    targets = bundle_of(project)["targets"]
+    assert targets["dev"]["variables"]["warehouse_id"] == "teamwh"       # = team warehouse
+    assert targets["prod"]["workspace"]["host"] == "https://dbc-dev.cloud.databricks.com"
+    assert targets["prod"]["variables"]["warehouse_id"] == "teamwh"      # = product dev warehouse
+    assert targets["prod"]["variables"]["catalog"] == "<product_prod_catalog>"
+    assert bundle_of(project)["variables"]["schedule"]["default"] == "0 0 5 * * ?"
+
+
+def test_yes_keeps_filled_values_over_defaults(project):
+    init_product.main(project, {"host": "dbc-dev.cloud.databricks.com",
+                                "prod_host": "dbc-prod.cloud.databricks.com"}, assume_yes=True)
+    init_product.main(project, {"host": "dbc-new.cloud.databricks.com"}, assume_yes=True)
+    targets = bundle_of(project)["targets"]
+    assert targets["dev"]["workspace"]["host"] == "https://dbc-new.cloud.databricks.com"
+    assert targets["prod"]["workspace"]["host"] == "https://dbc-prod.cloud.databricks.com"
+
+
+def test_rerun_changes_filled_values(project, monkeypatch):
+    monkeypatch.chdir(project.root)
+    assert cli.main(["init", *ALL_OPTIONS, "--yes"]) == 0
+    assert cli.main(["init", "--server-hostname", "dbc-new.cloud.databricks.com",
+                     "--product-dev-catalog", "orders_dev2", "--product-prod-catalog", "p2",
+                     "--product-prod-service-principal", "sp2", "--yes"]) == 0
+    targets = bundle_of(project)["targets"]
+    assert targets["dev"]["workspace"]["host"] == "https://dbc-new.cloud.databricks.com"
+    assert targets["dev"]["variables"]["catalog"] == "orders_dev2"
+    assert targets["prod"]["variables"]["catalog"] == "p2"
+    assert targets["prod"]["variables"]["service_principal"] == "sp2"
+    # The dev target keeps agreeing with config/dev-environment.toml.
+    config = devenv.read_dev_config(project.dev_config)
+    assert config.host == "https://dbc-new.cloud.databricks.com"
+    assert devenv.read_product_dev_catalog(project.dev_config) == "orders_dev2"
+
+
+def test_interactive_defaults_follow_the_answers(project, monkeypatch):
+    prompts = answering(monkeypatch, "", "dbc-dev.cloud.databricks.com", "teamwh", "team_x",
+                        "orders_dev")
+    assert init_product.main(project, {}, assume_yes=False) == 0
+    by_start = {prompt.split(" (")[0].split(" [")[0]: prompt for prompt in prompts}
+    assert by_start["SQL warehouse ID for the product dev job"].endswith("[teamwh]: ")
+    assert by_start["Server hostname of the prod workspace"].endswith(
+        "[dbc-dev.cloud.databricks.com]: ")
+    assert by_start["SQL warehouse ID for the product prod job"].endswith("[teamwh]: ")
+    assert by_start["Prod schedule"].endswith("[0 0 5 * * ?]: ")
+
+
+def test_rerun_shows_current_bundle_values(project, monkeypatch):
+    monkeypatch.chdir(project.root)
+    assert cli.main(["init", *ALL_OPTIONS, "--yes"]) == 0
+    prompts = answering(monkeypatch)
+    assert init_product.main(project, {}, assume_yes=False) == 0
+    assert any(p.startswith("Product prod identity") and p.endswith("[prod-sp-id]: ")
+               for p in prompts)
+    assert any(p.startswith("Server hostname of the prod workspace")
+               and p.endswith("[dbc-prod.cloud.databricks.com]: ") for p in prompts)
+
+
+def test_left_for_later_keeps_placeholders_and_lists_them(project, monkeypatch, capsys):
+    answering(monkeypatch, "", "dbc-dev.cloud.databricks.com", "teamwh", "team_x")
+    assert init_product.main(project, {}, assume_yes=False) == 0
+    targets = bundle_of(project)["targets"]
+    assert targets["dev"]["variables"]["service_principal"] == (
+        "<product-dev-service-principal-application-id>")
+    out = capsys.readouterr().out
+    assert "Still to fill in" in out
+    assert ("config/dev-environment.toml: catalogs.product_dev = <product_dev_catalog>  "
+            "(--product-dev-catalog)") in out
+    assert ("databricks.yml: targets.prod.variables.service_principal = "
+            "<product-prod-service-principal-application-id>  "
+            "(--product-prod-service-principal)") in out
+    assert "targets.prod.variables.catalog = <product_prod_catalog>  (--product-prod-catalog)" in out
+    assert "targets.dev.variables.warehouse_id" not in out  # filled with the team warehouse
+
+
+@pytest.mark.parametrize(("option", "value"), [
+    ("--prod-server-hostname", "not a host"), ("--product-prod-catalog", "<x>"),
+    ("--product-dev-service-principal", 'a"b'), ("--product-prod-warehouse-id", "a-b"),
+    ("--prod-schedule", "daily"),
+])
+def test_invalid_deployment_values_are_refused(project, monkeypatch, option, value):
+    monkeypatch.chdir(project.root)
+    with pytest.raises(SystemExit):
+        cli.main(["init", option, value, "--yes"])
+    assert (project.root / "databricks.yml").read_text() == BUNDLE
