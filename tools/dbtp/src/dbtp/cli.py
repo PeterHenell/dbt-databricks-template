@@ -18,6 +18,31 @@ def dbt_args(args: list[str]) -> list[str]:
     return args[1:] if args[:1] == ["--"] else args
 
 
+INIT_HELP = {
+    "host": "server hostname of the dev workspace (SQL Warehouses → your warehouse → Connection "
+            "details), e.g. dbc-1234abcd-5678.cloud.databricks.com; a workspace URL works too",
+    "warehouse_id": "SQL warehouse ID of the team's shared warehouse (shown next to the warehouse "
+                    "name; the HTTP path from Connection details works too)",
+    "team_catalog": "the team catalog (personal environments, MR builds)",
+    "product_dev_catalog": "the product dev catalog",
+    "product_dev_warehouse_id": "SQL warehouse ID for the product dev job (default: the team "
+                                "warehouse)",
+    "product_dev_identity": "application ID of the product dev service principal",
+    "prod_host": "server hostname of the prod workspace (default: the dev workspace)",
+    "product_prod_catalog": "the product prod catalog",
+    "product_prod_warehouse_id": "SQL warehouse ID for the product prod job (default: the "
+                                 "product dev warehouse)",
+    "product_prod_identity": "application ID of the product prod service principal",
+    "schedule": "Quartz cron expression for the prod schedule, e.g. \"0 0 5 * * ?\"",
+}
+
+
+def init_metavar(field: init_product.Field) -> str:
+    if field.name.endswith("_identity"):
+        return "APP_ID"
+    return {"host": "HOSTNAME", "warehouse": "ID", "schedule": "CRON"}.get(field.kind, "NAME")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="dbtp",
@@ -32,20 +57,15 @@ def build_parser() -> argparse.ArgumentParser:
     def command(name: str, help: str) -> argparse.ArgumentParser:
         return sub.add_parser(name, help=help, description=help)
 
-    init = command("init", "Once, in a new repository: set the data product name and the team's "
-                           "dev settings")
+    init = command("init", "Once, in a new repository: set the data product name, the team's "
+                           "dev settings and the deployment values in databricks.yml")
     init.add_argument("--product", help="data product name (lowercase, words joined by _)")
-    init.add_argument("--server-hostname", "--host", dest="host", metavar="HOSTNAME",
-                      help="server hostname of the dev workspace (SQL Warehouses → your "
-                           "warehouse → Connection details), e.g. "
-                           "dbc-1234abcd-5678.cloud.databricks.com; a workspace URL works too")
-    init.add_argument("--warehouse-id", help="SQL warehouse ID of the team's shared warehouse "
-                                             "(shown next to the warehouse name; the HTTP path "
-                                             "from Connection details works too)")
-    init.add_argument("--team-catalog", help="the team catalog (personal environments, MR builds)")
-    init.add_argument("--product-dev-catalog", help="the product dev catalog")
+    for field in init_product.FIELDS:
+        init.add_argument(field.option, *field.aliases, dest=field.name,
+                          metavar=init_metavar(field), help=INIT_HELP[field.name])
     init.add_argument("--yes", action="store_true",
-                      help="don't ask; leave values that aren't given as they are")
+                      help="don't ask; leave values that aren't given as they are (a placeholder "
+                           "with a default gets the default)")
 
     setup = command("setup", "Check the Databricks login, write your personal profiles.yml, dbt deps")
     setup.add_argument("--alias", help="use this developer alias without asking")
@@ -103,7 +123,7 @@ def dispatch(args: argparse.Namespace, project: Project) -> int:
     match args.command:
         case "init":
             given = {name: getattr(args, name) for name in
-                     ("product", "host", "warehouse_id", "team_catalog", "product_dev_catalog")}
+                     ("product", *(field.name for field in init_product.FIELDS))}
             return init_product.main(project, given, args.yes)
         case "setup":
             return setup_dev.main(project, args.alias, args.yes)

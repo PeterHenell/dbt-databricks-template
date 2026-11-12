@@ -202,3 +202,26 @@ def test_bundle_validates_against_mock_workspace(tmp_path, target):
     assert config["resources"]["volumes"]["dbt_artifacts_state"]["catalog_name"] == catalog
     assert job["run_as"]["service_principal_name"] == f"product-{target}-service-principal-application-id"
     assert ("schedule" in job) == (target == "prod")
+
+
+def test_init_fills_every_placeholder_of_the_bundle_and_dev_settings(tmp_path):
+    """`dbtp init` with every option leaves no <placeholder> in databricks.yml or
+    config/dev-environment.toml, so a team never has to edit them by hand to start."""
+    from dbtp import bundle, init_product
+
+    for name in ("dbt_project.yml", "databricks.yml", "config"):
+        source = ROOT / name
+        (shutil.copytree if source.is_dir() else shutil.copy)(source, tmp_path / name)
+    project = devenv.Project.at(tmp_path)
+    settings = init_product.Settings(product=PRODUCT, **{
+        field.name: {"host": "dbc-x.cloud.databricks.com", "warehouse": "wh1",
+                     "schedule": "0 0 6 * * ?"}.get(field.kind, f"{field.name}_value")
+        for field in init_product.FIELDS})
+    init_product.apply(project, settings)
+    assert init_product.placeholders_left(project) == []
+    config = yaml.safe_load((tmp_path / "databricks.yml").read_text())
+    for target in ("dev", "prod"):
+        assert bundle.target_placeholders(config, target) == []
+    dev_config = tomllib.loads((tmp_path / "config" / "dev-environment.toml").read_text())
+    assert config["targets"]["dev"]["workspace"]["host"] == dev_config["databricks"]["host"]
+    assert config["targets"]["dev"]["variables"]["catalog"] == dev_config["catalogs"]["product_dev"]

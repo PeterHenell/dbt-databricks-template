@@ -659,10 +659,10 @@ OAuth secrets (product identities);
 :""uv run dbtp init"";
 note right
   Sets the product name everywhere it is needed,
-  config/dev-environment.toml and the dev target
-  of databricks.yml
+  config/dev-environment.toml and both targets
+  of databricks.yml (warehouses, identities,
+  prod workspace and catalog, schedule)
 end note
-:Fill in the prod <placeholders> in databricks.yml;
 :""make setup clone-sources build"";
 note right
   The sample models, seed and tests

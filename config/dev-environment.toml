@@ -1,6 +1,6 @@
 # Team-level settings for personal development environments.
 # Committed and not secret: every developer on the team uses the same values.
-# Replace the placeholders when you create a repository from the template.
+# `uv run dbtp init` fills the placeholders (run it again to change a value).
 
 [databricks]
 # Server hostname of the dev workspace (SQL Warehouses → your warehouse → Connection

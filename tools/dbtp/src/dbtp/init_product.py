@@ -5,26 +5,35 @@ Run once, right after creating the repository from the template:
 1. Renames the data product: the current dbt project name (the template ships a
    working sample name) is replaced in every file that must repeat it.
 2. Writes the team's dev settings into `config/dev-environment.toml`.
-3. Fills the `dev` target of `databricks.yml` with the same dev workspace host and
-   product dev catalog, if it still has the template's placeholders.
+3. Writes every deployment value into `databricks.yml`: the `dev` target (the same dev
+   workspace and product dev catalog as the dev settings, plus its SQL warehouse and
+   identity), the whole `prod` target and the prod schedule.
 
 Workspaces and SQL warehouses are asked for as the Databricks UI shows them (server
 hostname, SQL warehouse ID) and accept what people paste from there: a bare hostname
 or a browser URL, a warehouse ID, HTTP path or warehouse page URL. `normalize_host`
 and `normalize_warehouse_id` reduce them to the stored form.
 
-It can be run again, e.g. to rename the product: it always starts from the name that
-is in `dbt_project.yml` now. Values not given are asked for; with `--yes`, values not
-given are left as they are.
+Values are written by their key (`yaml_edit`, `set_toml_value`), not by replacing
+placeholder text, so it can be run again to change any of them; the questions then
+show the current values. It always starts from the product name that is in
+`dbt_project.yml` now. Values not given are asked for. With `--yes`, nothing is asked:
+values not given keep what they have, except that a placeholder with a default (prod
+workspace = dev workspace, product dev warehouse = team warehouse, prod warehouse =
+product dev warehouse) gets that default. Answers left for later keep their
+placeholders, and the end of the run lists every placeholder still left.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
-from pathlib import Path
+import tomllib
+from collections.abc import Callable
+from dataclasses import dataclass, fields
 
-from dbtp import devenv
+import yaml
+
+from dbtp import bundle, devenv, yaml_edit
 from dbtp.devenv import Project, SetupError
 
 # Files that must repeat the data product name (relative to the repository root).
@@ -36,18 +45,8 @@ PRODUCT_NAME_FILES = (
     "local/profiles.yml",    # profile name, local schema prefix
 )
 
-DEV_CONFIG_KEYS = {  # setting -> key in config/dev-environment.toml
-    "host": "host",
-    "warehouse_id": "warehouse_id",
-    "team_catalog": "team",
-    "product_dev_catalog": "product_dev",
-}
-
-# Placeholders in the `dev` target of databricks.yml that the dev settings answer.
-BUNDLE_DEV_PLACEHOLDERS = {
-    "host": "https://<dev-workspace-host>",
-    "product_dev_catalog": "<product_dev_catalog>",
-}
+DEV_CONFIG = "config/dev-environment.toml"
+BUNDLE = "databricks.yml"
 
 
 @dataclass
@@ -57,6 +56,13 @@ class Settings:
     warehouse_id: str | None = None
     team_catalog: str | None = None
     product_dev_catalog: str | None = None
+    product_dev_warehouse_id: str | None = None
+    product_dev_identity: str | None = None
+    prod_host: str | None = None
+    product_prod_catalog: str | None = None
+    product_prod_warehouse_id: str | None = None
+    product_prod_identity: str | None = None
+    schedule: str | None = None
 
 
 def rename_in_text(text: str, old: str, new: str) -> str:
@@ -123,11 +129,90 @@ def normalize_warehouse_id(value: str) -> str:
     return warehouse
 
 
-# Settings that hold a workspace or a SQL warehouse, and how each is normalized.
-NORMALIZERS = {
+@dataclass(frozen=True)
+class Field:
+    """One setting: its CLI option, question, where it is written, and how it's checked."""
+
+    name: str                               # attribute of Settings
+    option: str                             # CLI option
+    question: str
+    kind: str                               # host | warehouse | name | schedule
+    toml_key: str | None = None             # key in config/dev-environment.toml
+    bundle_key: tuple[str, ...] | None = None  # key path in databricks.yml
+    default_from: str | None = None         # setting whose value is the default
+    aliases: tuple[str, ...] = ()
+
+
+LATER = " (Enter to leave it for later)"
+
+FIELDS = (
+    Field("host", "--server-hostname",
+          f"Server hostname of the dev workspace ({HOST_HINT})", "host",
+          toml_key="host", bundle_key=("targets", "dev", "workspace", "host"),
+          aliases=("--host",)),
+    Field("warehouse_id", "--warehouse-id",
+          f"SQL warehouse ID of the team's shared warehouse ({WAREHOUSE_HINT})", "warehouse",
+          toml_key="warehouse_id"),
+    Field("team_catalog", "--team-catalog",
+          "Team catalog (personal environments and MR builds go here)", "name",
+          toml_key="team"),
+    Field("product_dev_catalog", "--product-dev-catalog", "Product dev catalog" + LATER, "name",
+          toml_key="product_dev", bundle_key=("targets", "dev", "variables", "catalog")),
+    Field("product_dev_warehouse_id", "--product-dev-warehouse-id",
+          "SQL warehouse ID for the product dev job", "warehouse",
+          bundle_key=("targets", "dev", "variables", "warehouse_id"),
+          default_from="warehouse_id"),
+    Field("product_dev_identity", "--product-dev-service-principal",
+          "Product dev identity: service principal application ID" + LATER, "name",
+          bundle_key=("targets", "dev", "variables", "service_principal")),
+    Field("prod_host", "--prod-server-hostname",
+          "Server hostname of the prod workspace (the same as dev if one workspace has "
+          "everything: environments are picked by catalog)", "host",
+          bundle_key=("targets", "prod", "workspace", "host"), default_from="host"),
+    Field("product_prod_catalog", "--product-prod-catalog", "Product prod catalog" + LATER,
+          "name", bundle_key=("targets", "prod", "variables", "catalog")),
+    Field("product_prod_warehouse_id", "--product-prod-warehouse-id",
+          "SQL warehouse ID for the product prod job", "warehouse",
+          bundle_key=("targets", "prod", "variables", "warehouse_id"),
+          default_from="product_dev_warehouse_id"),
+    Field("product_prod_identity", "--product-prod-service-principal",
+          "Product prod identity: service principal application ID" + LATER, "name",
+          bundle_key=("targets", "prod", "variables", "service_principal")),
+    Field("schedule", "--prod-schedule",
+          "Prod schedule (Quartz cron: seconds minutes hours day-of-month month day-of-week)",
+          "schedule", bundle_key=("variables", "schedule", "default")),
+)
+FIELD = {field.name: field for field in FIELDS}
+
+
+def normalize_name(value: str) -> str:
+    """A catalog or identity: non-empty, no placeholder, nothing that breaks the quoting."""
+    value = value.strip()
+    if not value or "<" in value or '"' in value:
+        raise SetupError(f"'{value}' is not a valid value here.")
+    return value
+
+
+def normalize_schedule(value: str) -> str:
+    """A Quartz cron expression: 6 or 7 fields (seconds first)."""
+    value = " ".join(value.split())
+    if not 6 <= len(value.split(" ")) <= 7 or '"' in value or "<" in value:
+        raise SetupError(
+            f"'{value}' is not a Quartz cron expression (6 or 7 fields, seconds first), "
+            "e.g. 0 0 5 * * ?")
+    return value
+
+
+NORMALIZERS: dict[str, Callable[[str], str]] = {
     "host": normalize_host,
-    "warehouse_id": normalize_warehouse_id,
+    "warehouse": normalize_warehouse_id,
+    "name": normalize_name,
+    "schedule": normalize_schedule,
 }
+
+
+def normalizer(name: str) -> Callable[[str], str]:
+    return NORMALIZERS[FIELD[name].kind]
 
 
 def validate(settings: Settings) -> None:
@@ -136,13 +221,12 @@ def validate(settings: Settings) -> None:
             f"Product name '{settings.product}' must be lowercase letters and digits joined "
             "by single underscores, e.g. customer_orders."
         )
-    for name, normalize in NORMALIZERS.items():
-        if (value := getattr(settings, name)) is not None:
-            setattr(settings, name, normalize(value))
-    for name in ("team_catalog", "product_dev_catalog"):
-        value = getattr(settings, name)
-        if value is not None and (not value or "<" in value or '"' in value):
-            raise SetupError(f"'{value}' is not a valid {name.replace('_', ' ')}.")
+    for field in FIELDS:
+        if (value := getattr(settings, field.name)) is not None:
+            try:
+                setattr(settings, field.name, normalizer(field.name)(value))
+            except SetupError as error:
+                raise SetupError(f"{field.option}: {error}") from None
 
 
 def apply(project: Project, settings: Settings) -> list[str]:
@@ -166,51 +250,77 @@ def apply(project: Project, settings: Settings) -> list[str]:
         for relative in PRODUCT_NAME_FILES:
             update(relative, lambda text: rename_in_text(text, old, settings.product))
 
-    def fill_config(text: str) -> str:
-        for name, key in DEV_CONFIG_KEYS.items():
-            if (value := getattr(settings, name)) is not None:
-                text = set_toml_value(text, key, value)
+    def fill(text: str, key_of: Callable[[Field], object], setter) -> str:
+        for field in FIELDS:
+            key = key_of(field)
+            if key is not None and (value := getattr(settings, field.name)) is not None:
+                text = setter(text, key, value)
         return text
 
-    update("config/dev-environment.toml", fill_config)
+    update(DEV_CONFIG, lambda text: fill(text, lambda f: f.toml_key, set_toml_value))
 
-    def fill_bundle(text: str) -> str:
-        if settings.host is not None:
-            text = text.replace(BUNDLE_DEV_PLACEHOLDERS["host"], settings.host)
-        if settings.product_dev_catalog is not None:
-            text = text.replace(BUNDLE_DEV_PLACEHOLDERS["product_dev_catalog"],
-                                settings.product_dev_catalog)
-        return text
+    def set_bundle_value(text: str, key: tuple[str, ...], value: str) -> str:
+        try:
+            return yaml_edit.set_value(text, key, value)
+        except SetupError as error:
+            raise SetupError(f"{BUNDLE}: {error}") from None
 
-    update("databricks.yml", fill_bundle)
+    update(BUNDLE, lambda text: fill(text, lambda f: f.bundle_key, set_bundle_value))
     return changed
 
 
-def current_dev_values(project: Project) -> dict[str, str]:
-    """The settings in config/dev-environment.toml that are already filled in.
+def _get(data, path: tuple[str, ...]):
+    for key in path:
+        if not isinstance(data, dict):
+            return None
+        data = data.get(key)
+    return data
 
-    The host is returned as a bare server hostname, the form the question asks for.
+
+def _read(project: Project) -> tuple[dict, dict]:
+    """(config/dev-environment.toml, databricks.yml) parsed; empty if missing."""
+    toml_path, bundle_path = project.root / DEV_CONFIG, project.root / BUNDLE
+    config = tomllib.loads(toml_path.read_text()) if toml_path.is_file() else {}
+    flat = {key: value for table in config.values() if isinstance(table, dict)
+            for key, value in table.items()}
+    data = (yaml.safe_load(bundle_path.read_text()) or {}) if bundle_path.is_file() else {}
+    return flat, data
+
+
+def current_values(project: Project) -> dict[str, str]:
+    """The settings that are already filled in (no placeholder), in the form asked for.
+
+    Hosts are returned as bare server hostnames, the form the questions ask for.
     """
-    try:
-        text = project.dev_config.read_text()
-    except FileNotFoundError:
-        return {}
+    config, data = _read(project)
     values = {}
-    for name, key in DEV_CONFIG_KEYS.items():
-        match = re.search(rf'^{re.escape(key)}\s*=\s*"([^"\n]*)"', text, re.MULTILINE)
-        if match and "<" not in match.group(1):
-            values[name] = match.group(1)
-    if "host" in values:
-        values["host"] = bare_host(values["host"])
+    for field in FIELDS:
+        value = (config.get(field.toml_key) if field.toml_key
+                 else _get(data, field.bundle_key))
+        if isinstance(value, str) and value and not bundle.PLACEHOLDER.search(value):
+            values[field.name] = bare_host(value) if field.kind == "host" else value
     return values
 
 
-QUESTIONS = (
-    ("host", f"Server hostname of the dev workspace ({HOST_HINT})"),
-    ("warehouse_id", f"SQL warehouse ID of the team's shared warehouse ({WAREHOUSE_HINT})"),
-    ("team_catalog", "Team catalog (personal environments and MR builds go here)"),
-    ("product_dev_catalog", "Product dev catalog (Enter to leave it for later)"),
-)
+def current_dev_values(project: Project) -> dict[str, str]:
+    """The settings in config/dev-environment.toml that are already filled in."""
+    return {name: value for name, value in current_values(project).items()
+            if FIELD[name].toml_key}
+
+
+def placeholders_left(project: Project) -> list[tuple[str, str, str, str | None]]:
+    """(file, key, placeholder, option that fills it) for every placeholder still left."""
+    config_path = project.root / DEV_CONFIG
+    left: list[tuple[str, str, str, str | None]] = []
+    if config_path.is_file():
+        options = {field.toml_key: field.option for field in FIELDS if field.toml_key}
+        for path, value in bundle.find_placeholders(tomllib.loads(config_path.read_text())):
+            left.append((DEV_CONFIG, ".".join(path), value, options.get(path[-1])))
+    _, data = _read(project)
+    options = {field.bundle_key: field.option for field in FIELDS if field.bundle_key}
+    for path, value in bundle.find_placeholders(data):
+        left.append((BUNDLE, ".".join(path), value, options.get(path)))
+    return left
 
 
 def ask(question: str, default: str | None, normalize=None) -> str | None:
@@ -228,26 +338,51 @@ def ask(question: str, default: str | None, normalize=None) -> str | None:
         return answer
 
 
+def _shown(name: str, value: str | None) -> str | None:
+    """A value as the question for `name` shows it (hosts without https://)."""
+    if value is None:
+        return None
+    value = normalizer(name)(value)
+    return bare_host(value) if FIELD[name].kind == "host" else value
+
+
 def main(project: Project, given: dict[str, str | None], assume_yes: bool) -> int:
     current = devenv.read_product(project.dbt_project)
-    existing = current_dev_values(project)
+    existing = current_values(project)
     values = dict(given)
     if values.get("product") is None and not assume_yes:
         values["product"] = ask("Data product name (lowercase, words joined by _)", current)
     values["product"] = values.get("product") or current
-    for name, question in QUESTIONS:
-        if values.get(name) is None and not assume_yes:
-            values[name] = ask(question, existing.get(name), NORMALIZERS.get(name))
-    settings = Settings(**{key: values.get(key) for key in Settings.__dataclass_fields__})
+
+    def known(name: str) -> str | None:
+        """The value `name` will have after this run (given/answered, else current)."""
+        return values.get(name) or existing.get(name)
+
+    for field in FIELDS:
+        if values.get(field.name) is not None:
+            continue
+        derived = _shown(field.default_from, known(field.default_from)) if field.default_from else None
+        if assume_yes:
+            if field.name not in existing:
+                values[field.name] = derived
+        else:
+            values[field.name] = ask(field.question, existing.get(field.name) or derived,
+                                     normalizer(field.name))
+    settings = Settings(**{f.name: values.get(f.name) for f in fields(Settings)})
 
     changed = apply(project, settings)
     print(f"Data product: {settings.product}")
     print("Changed: " + (", ".join(changed) if changed else "nothing (already set)"))
+    left = placeholders_left(project)
+    if left:
+        print("\nStill to fill in (run `uv run dbtp init` again, or pass the option):")
+        for file, key, value, option in left:
+            print(f"  {file}: {key} = {value}" + (f"  ({option})" if option else ""))
     print(
         "\nNext:\n"
         "  make setup          log in check, your personal profiles.yml, dbt deps\n"
         "  make build          build and test the sample models in your personal environment\n"
-        "Deployment settings (the prod target in databricks.yml, GitLab variables) are\n"
-        "described in README.md, \"Turn the template into your data product\"."
+        "Service principals and GitLab settings: README.md, \"Turn the template into your\n"
+        "data product\"."
     )
     return 0
