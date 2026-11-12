@@ -1,13 +1,12 @@
 version: 2
 
-# The published interface, versioned as a whole (ADR 0003). Version N of every model is
-# built into schema `vN` under the model's plain name (`v1.customers`, `v2.customers`).
-# See docs/published-interface.md for how to add a major version.
+# The published data product: what consumers read, from schema `published`. Every model
+# here has an enforced contract (`data_type` on every column). Changing a published
+# column is governed by the team, not by tooling (ADR 0010, docs/published-interface.md).
 
 models:
   - name: customers
     description: One row per customer, with their order history summarised.
-    latest_version: 2
     config:
       contract:
         enforced: true
@@ -22,18 +21,12 @@ models:
         data_tests: [unique]
       - name: customer_name
         data_type: string
-      - name: market_segment
-        data_type: string
       - name: number_of_orders
         data_type: bigint
         constraints:
           - type: not_null
       - name: number_of_open_orders
         data_type: bigint
-        constraints:
-          - type: not_null
-      - name: lifetime_value
-        data_type: decimal(18,2)
         constraints:
           - type: not_null
       - name: total_order_value
@@ -44,13 +37,3 @@ models:
         data_type: date
       - name: most_recent_order_date
         data_type: date
-    versions:
-      - v: 1
-        deprecation_date: 2027-06-30
-        columns:
-          - include: all
-            exclude: [total_order_value, number_of_open_orders]
-      - v: 2
-        columns:
-          - include: all
-            exclude: [market_segment, lifetime_value]

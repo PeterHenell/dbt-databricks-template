@@ -49,7 +49,7 @@ end fork
 :Full ""dbt build ~--target mr"" from prod sources;
 note right
   sample_product~__mr~__staging, ~__intermediate,
-  ~__v1, ~__v2 in the team catalog
+  ~__published in the team catalog
   (overwritten by the next MR build)
 end note
 |GitLab CI|

@@ -4,9 +4,7 @@ The platform's dbt macros for data products on Databricks, as one dbt package:
 
 | File (`macros/`) | What |
 |---|---|
-| `generate_schema_name.sql` | One schema per layer: plain `<layer>` in target `prod`, `<target.schema>__<layer>` everywhere else; published version N goes to layer `vN` (ADR 0001, 0003) |
-| `generate_alias_name.sql` | Versioned models keep their plain name (`v1.customers`) |
-| `assert_published_models_are_versioned.sql` | `on-run-start` check: every published model is versioned |
+| `generate_schema_name.sql` | One schema per layer: plain `<layer>` in target `prod`, `<target.schema>__<layer>` everywhere else (ADR 0001) |
 | `source_modes.sql` | The `source()` override (`dev_source_mode`: prod, clone, sample) and `clone_sources` (`make clone-sources`) (ADR 0005) |
 | `personal_environment.sql` | `drop_personal_environment` (`make clean-dev`) and the schema matching it shares with the MR build |
 | `mr_environment.sql` | `drop_mr_environment` (`dbtp mr-build`, ADR 0009) |
@@ -32,11 +30,8 @@ nodes and sources.
 
 2. dbt only takes some overrides from the root project, so the product keeps one-line
    stubs in `macros/dbt_platform.sql` that call the package: `generate_schema_name`,
-   `generate_alias_name`, `source` and `spark__alter_column_set_constraints`. They
+   `source` and `spark__alter_column_set_constraints`. They
    change only when the package's interface does.
-
-3. `dbt_project.yml` calls the run-start check by its package name:
-   `on-run-start: ["{{ dbt_platform.assert_published_models_are_versioned() }}"]`.
 
 `dbt run-operation clone_sources`, `drop_personal_environment` and
 `drop_mr_environment` find the package's macros by name, so dbtp calls them as before.

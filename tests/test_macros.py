@@ -86,11 +86,11 @@ def run_mr_operation(tmp_path: Path, target: str, args: dict) -> subprocess.Comp
 
 
 def test_mr_build_drops_only_the_mr_schemas(tmp_path):
-    schemas = SCHEMAS + [f"{PRODUCT}__mr", f"{PRODUCT}__mr__v1", f"{PRODUCT}__mrx__staging"]
+    schemas = SCHEMAS + [f"{PRODUCT}__mr", f"{PRODUCT}__mr__published", f"{PRODUCT}__mrx__staging"]
     result = run_mr_operation(tmp_path, "mr", {"dry_run": True, "schemas": schemas})
     assert result.returncode == 0, result.stdout + result.stderr
     listed = [line.strip() for line in result.stdout.splitlines() if line.startswith("  ")]
-    assert listed == [f"{PRODUCT}__mr", f"{PRODUCT}__mr__staging", f"{PRODUCT}__mr__v1"]
+    assert listed == [f"{PRODUCT}__mr", f"{PRODUCT}__mr__published", f"{PRODUCT}__mr__staging"]
 
 
 def test_mr_drop_refuses_prod_target(tmp_path):
@@ -102,9 +102,9 @@ def test_mr_drop_refuses_prod_target(tmp_path):
 # ---- The platform package's stubs (macros/dbt_platform.sql) ----
 
 
-def test_stubs_apply_the_package_schema_and_alias_names(tmp_path):
-    """Parsing applies generate_schema_name/generate_alias_name: personal layer schemas,
-    published versions in `vN` under the plain model name."""
+def test_stubs_apply_the_package_schema_names(tmp_path):
+    """Parsing applies generate_schema_name: one personal schema per layer, published
+    included, under dbt's default (plain) model names."""
     (tmp_path / "profiles.yml").write_text(devenv.render_profile(PRODUCT, "pe", CONFIG))
     result = subprocess.run(
         ["dbt", "-q", "parse", "--profiles-dir", str(tmp_path), "--target-path", str(tmp_path / "target"),
@@ -115,15 +115,13 @@ def test_stubs_apply_the_package_schema_and_alias_names(tmp_path):
     nodes = json.loads((tmp_path / "target" / "manifest.json").read_text())["nodes"]
     models = [n for n in nodes.values()
               if n["resource_type"] == "model" and n["package_name"] == PRODUCT]
-    # Whatever the product's models are: a staging model, and a version of a published one.
+    # Whatever the product's models are: a staging model and a published one.
     staging = next((n for n in models if n["config"]["schema"] == "staging"), None)
     published = next((n for n in models if n["config"]["schema"] == "published"), None)
     if staging is None or published is None:
         pytest.skip("needs at least one staging and one published model")
     assert staging["schema"] == f"{PRODUCT}__pe__staging" and staging["alias"] == staging["name"]
-    assert published["version"] is not None
-    assert published["schema"] == f"{PRODUCT}__pe__v{published['version']}"
-    assert published["alias"] == published["name"]  # plain name, no `_vN`
+    assert published["schema"] == f"{PRODUCT}__pe__published"
 
 
 # Run dbt in-process with the Databricks adapter's `execute` replaced, so macros that

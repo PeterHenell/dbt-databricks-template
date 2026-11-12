@@ -45,7 +45,7 @@ A dataset with consumers that is built by one dbt project in one repository and 
 _Avoid_: project (when the dataset is meant), domain
 
 **Layer**:
-One stage of the project's model graph, stored in its own schema: `staging`, `intermediate`, or a published version.
+One stage of the project's model graph, stored in its own schema: `staging`, `intermediate`, `published` or `seeds`.
 _Avoid_: zone, tier, medallion level
 
 **Published interface**:
@@ -53,15 +53,15 @@ The models in a data product that consumers may read; everything outside the pub
 _Avoid_: marts, output port, public layer
 
 **Contract version**:
-A version of the data contract; its major number (`v1`, `v2`, …) names the schema the published interface is stored in. How contract versions are managed is an open question.
+A version of the data contract. No versioning mechanism is chosen yet (ADR 0010); until then there is one contract, for the `published` schema.
 _Avoid_: product version, model version (when the whole interface is meant)
 
 **Data contract**:
-The ODCS document describing one major contract version, generated from the dbt project.
+The ODCS document describing the published interface, generated from the dbt project.
 _Avoid_: schema contract, interface spec
 
 **Breaking change**:
-A change to the published interface that can break an existing consumer of the same major contract version.
+A change to the published interface that can break an existing consumer, such as removing or renaming a column, or changing a type or the grain.
 
 ## Development
 

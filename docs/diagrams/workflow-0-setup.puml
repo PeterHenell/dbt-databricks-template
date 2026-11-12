@@ -42,7 +42,7 @@ end note
 note right
   sample_product~__jodo~__staging
   sample_product~__jodo~__intermediate
-  sample_product~__jodo~__v1, ...~__v2
+  sample_product~__jodo~__published
   target/ (manifest, run_results) locally
 end note
 |Developer (dev container)|

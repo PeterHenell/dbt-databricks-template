@@ -168,10 +168,10 @@ def test_every_node_is_built_into_a_layer_schema(tmp_path, target, prefix):
     nodes = dbt_ls(target, tmp_path)
     assert nodes
     assert {node["database"] for node in nodes} == {"cat_x"}
-    known = layers() - {"published"}
+    known = layers()
     for node in nodes:
         layer = node["schema"].removeprefix(prefix)
-        assert node["schema"].startswith(prefix) and (layer in known or re.fullmatch(r"v\d+", layer)), (
+        assert node["schema"].startswith(prefix) and layer in known, (
             f"{node['name']} is built into schema '{node['schema']}': give its folder a layer "
             "with `+schema` in dbt_project.yml")
 

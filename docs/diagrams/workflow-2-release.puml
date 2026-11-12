@@ -30,7 +30,7 @@ note right
 end note
 :Job run: task dbt_build (""dbt build ~--target prod"");
 note right
-  staging, intermediate, v1, v2
+  staging, intermediate, published
   in the product dev catalog
 end note
 :Job run: task publish_dbt_artifacts;
