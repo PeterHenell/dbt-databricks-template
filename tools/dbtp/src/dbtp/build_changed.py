@@ -18,29 +18,27 @@ from pathlib import Path
 
 from dbtp import devenv
 from dbtp.devenv import Project, SetupError
-from dbtp.setup_dev import cli_access_token
+from dbtp.setup_dev import cli_access_token, cli_profile
 
 
 def state_dir(project: Project) -> Path:
     return project.target_dir / "product-dev-state"
 
 
-def download_manifest(host: str, catalog: str, state_dir: Path) -> Path:
+def download_manifest(host: str, catalog: str, state_dir: Path, profile: str | None = None) -> Path:
     source = f"dbfs:{devenv.artifacts_volume_path(catalog)}/latest/manifest.json"
     state_dir.mkdir(parents=True, exist_ok=True)
     target = state_dir / "manifest.json"
     target.unlink(missing_ok=True)
-    # `fs cp` has no --host flag. Use the developer's U2M login (`databricks auth login
-    # --host …`) for exactly this host, ignoring any ~/.databrickscfg profiles.
-    env = {
-        **os.environ,
-        "DATABRICKS_HOST": host,
-        "DATABRICKS_AUTH_TYPE": "databricks-cli",
-        "DATABRICKS_CONFIG_FILE": os.devnull,
-    }
+    # Use the developer's login for exactly this host: the CLI profile for the dev host
+    # (see `cli_profile`), and `DATABRICKS_HOST` because `fs cp` has no --host flag. The
+    # config file stays visible so the CLI sees `auth_storage` (keyring token storage).
+    # An exported profile for another workspace must not win.
+    env = {**os.environ, "DATABRICKS_HOST": host}
     env.pop("DATABRICKS_CONFIG_PROFILE", None)
+    args = ["--profile", profile] if profile else []
     result = subprocess.run(
-        ["databricks", "fs", "cp", "--overwrite", source, str(target)],
+        ["databricks", "fs", "cp", *args, "--overwrite", source, str(target)],
         capture_output=True, text=True, check=False, env=env,
     )
     if result.returncode != 0 or not target.exists():
@@ -73,8 +71,9 @@ def main(project: Project, dbt_args: list[str], manifest_dir: Path | None = None
     else:
         config = devenv.read_dev_config(project.dev_config)
         catalog = devenv.read_product_dev_catalog(project.dev_config)
-        cli_access_token(config.host)  # clear message if not logged in
+        profile = cli_profile(config.host)
+        cli_access_token(config.host, profile)  # clear message if not logged in
         state = state_dir(project)
-        download_manifest(config.host, catalog, state)
+        download_manifest(config.host, catalog, state, profile)
         print(f"Deferring to the product dev manifest of catalog {catalog}.")
     return devenv.run(dbt_command(state, dbt_args), project)
