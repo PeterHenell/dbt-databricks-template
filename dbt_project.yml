@@ -18,9 +18,6 @@ analysis-paths: ["analyses"]
 target-path: "target"
 clean-targets: ["target", "dbt_packages"]
 
-on-run-start:
-  - "{{ dbt_platform.assert_published_models_are_versioned() }}"
-
 vars:
   # Where a personal environment reads sources from: prod | clone | sample (dbt_platform: macros/source_modes.sql).
   # Prod and MR targets ignore it. Override per run: --vars '{dev_source_mode: prod}'.
@@ -38,8 +35,8 @@ models:
       +schema: intermediate
       +materialized: view
     published:
-      # The published interface: enforced contracts on every model (ADR 0004).
-      # Every model here must be versioned; version N goes to schema `vN`.
+      # The published data product that consumers read: enforced contracts on every
+      # model (ADR 0004). No versioning mechanism is built in (ADR 0010).
       +schema: published
       +materialized: table
       +contract:

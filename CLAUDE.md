@@ -36,7 +36,7 @@ The Makefile holds only the developer's daily commands. CI-only steps are `uv ru
 
 - `models/staging/<source>/`: one view per source table, renamed to project conventions (`stg_<source>__<entity>`); sources declared in `_<source>__sources.yml` with their prod catalog and schema; set `database` only when `target.type == 'databricks'` (the local engine has no catalogs). Models read sources only through `source()`, never by table name.
 - `models/intermediate/`: `int_` views with the business logic.
-- `models/published/`: the published interface that consumers read. Every model here is versioned (`<model>_vN.sql`, `versions:` in YAML) with an enforced contract (`data_type` on every column); version N is built into schema `vN` under the plain model name. How to add or retire a version: `docs/published-interface.md`.
+- `models/published/`: the published interface that consumers read, built into schema `published` under plain model names. Every model here has an enforced contract (`data_type` on every column). There is no built-in versioning (ADR 0010): breaking changes are handled by team review, see `docs/published-interface.md`.
 - `seeds/`: small static lookup CSVs, documented and tested in `seeds/_seeds.yml`, built into the `seeds` layer.
 - Each folder is a layer with its own schema, set with `+schema` in `dbt_project.yml`. A new model folder needs a `+schema`, otherwise its models fall back to the profile's schema (`tests/test_bundle.py` catches that).
 - All models are Delta (`+file_format: delta`).

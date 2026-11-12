@@ -24,7 +24,7 @@ repeat
   :dbt build with dbt-spark;
   note right
     sample_product~__local~__staging,
-    ~__intermediate, ~__v1, ~__v2
+    ~__intermediate, ~__published
   end note
   |Developer (host shell)|
 repeat while (Looks right?) is (no)

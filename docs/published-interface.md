@@ -1,27 +1,18 @@
-# The published interface and its versions
+# The published interface
 
-Consumers read the published interface from one schema per major contract version: `v1`, `v2`, … in the product catalog (`<product>__<alias>__vN` in your personal environment). Tables keep their plain names: `v2.customers`, not `customers_v2`.
-
-The whole interface is versioned together (ADR 0003): a breaking change to **any** published model means a new major version for **all** of them, so every `vN` schema holds the complete product.
+Consumers read the published data product from one schema, `published`, in the product catalog (`<product>__<alias>__published` in your personal environment). Tables have their plain model names: `published.customers`. Everything outside `models/published/` is internal and may change at any time.
 
 ## How it is built
 
-- Models in `models/published/` use [dbt model versions](https://docs.getdbt.com/docs/mesh/govern/model-versions). Version N of a model lives in `<model>_vN.sql`.
-- The platform package's `generate_schema_name` puts version N in layer `vN`; its `generate_alias_name` keeps the plain model name (`tools/dbt_platform/macros/`, called from the stubs in `macros/dbt_platform.sql`).
-- Every published model has an enforced contract (`data_type` on every column).
-- A published model without `versions:` fails the run (`tools/dbt_platform/macros/assert_published_models_are_versioned.sql`, run on run start).
-- `ref('customers')` resolves to the `latest_version`; pin an older one with `ref('customers', v=1)`.
+- Models in `models/published/` are tables in layer `published` (`+schema: published` in `dbt_project.yml`).
+- Every published model has an enforced contract: a `data_type` on every column in `models/published/_published.yml`. dbt refuses to build the model if its result doesn't have exactly those columns and types, so a change to a column always shows up in the YAML.
+- Give the key `unique` and `not_null` tests, like every model.
 
-## Adding a major version (N → N+1)
+## Changing a published model
 
-For **every** model in `models/published/`:
+There is no versioning mechanism in the template (ADR 0010). What protects consumers is how the team works:
 
-1. Copy `<model>_vN.sql` to `<model>_vN+1.sql` and make the change.
-2. In the model's YAML, add `- v: N+1` under `versions:` with its column `include`/`exclude` list, and set `latest_version: N+1`.
-3. Give `- v: N` a `deprecation_date` that leaves consumers time to move.
+- **Non-breaking changes** (a new column, a fix that keeps the columns, types and grain) go through the normal feature flow.
+- **Breaking changes** (removing or renaming a column, changing a type or the grain) need a decision, not just a merge request. Before you make one, find out who reads the model, agree a date with them, and say in the MR that it is breaking. Reviewers check every MR that touches `models/published/` for breaking changes.
 
-Then `uv run dbt build --select published` and check that both `vN` and `vN+1` build and pass their tests.
-
-## Retiring a version
-
-Both versions are built until the old one's `deprecation_date`. After that date dbt warns on every parse ("has passed its deprecation date"). Then, for every published model, delete the old `<model>_vN.sql` and its `- v: N` entry. The `vN` schema is left in the catalog; drop it by hand once consumers no longer use it.
+If a product really needs an old and a new version side by side for a while, use dbt's [model versions](https://docs.getdbt.com/docs/mesh/govern/model-versions) as dbt ships them, without platform changes: version N is built as `published.<model>_vN`, and the `latest_version_pointer` config can keep a plain-name view on the latest one. ADR 0010 has the details. Which mechanism becomes the team standard is still open.

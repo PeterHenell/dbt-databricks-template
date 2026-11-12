@@ -10,11 +10,6 @@
     {{ return(dbt_platform.generate_schema_name(custom_schema_name, node)) }}
 {%- endmacro %}
 
-{#- Versioned models keep their plain name (`v1.customers`). -#}
-{% macro generate_alias_name(custom_alias_name=none, node=none) -%}
-    {{ return(dbt_platform.generate_alias_name(custom_alias_name, node)) }}
-{%- endmacro %}
-
 {#- Source modes: personal targets read their shallow clones by default. -#}
 {% macro source(source_name, table_name) -%}
     {{ return(dbt_platform.source(source_name, table_name)) }}

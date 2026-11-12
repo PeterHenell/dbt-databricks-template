@@ -1,9 +1,9 @@
 select
     customers.customer_id,
     customers.customer_name,
-    customers.market_segment,
     cast(coalesce(orders.number_of_orders, 0) as bigint) as number_of_orders,
-    cast(coalesce(orders.lifetime_value, 0) as decimal(18, 2)) as lifetime_value,
+    cast(coalesce(orders.number_of_open_orders, 0) as bigint) as number_of_open_orders,
+    cast(coalesce(orders.lifetime_value, 0) as decimal(18, 2)) as total_order_value,
     orders.first_order_date,
     orders.most_recent_order_date
 from {{ ref('stg_sample__customers') }} as customers

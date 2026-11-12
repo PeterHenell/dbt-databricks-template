@@ -21,7 +21,6 @@ Names in the diagrams use the sample product `sample_product` and a developer al
 | [6](#6-release-a-fix-that-is-not-on-main-hotfix) | Release a fix that is not on `main` (hotfix) | Exceptional; not supported by default |
 | [7](#7-a-release-fails-in-product-dev) | A release fails in product dev | The release's test run fails |
 | [8](#8-add-a-new-source) | Add a new source | New upstream data |
-| [9](#9-retire-an-old-published-version) | Retire an old published version | After a deprecation date |
 | [10](#10-try-a-change-on-the-local-engine-no-databricks) | Try a change on the local engine (no Databricks) | Offline, or Databricks unavailable |
 | [11](#11-create-a-new-data-product-from-the-template) | Create a new data product from the template | Once per data product |
 
@@ -99,11 +98,11 @@ Source: [`diagrams/workflow-2-release.puml`](diagrams/workflow-2-release.puml)
 
 ## 3. Make a breaking change to the published interface
 
-Consumers read the published interface from `v1`, `v2`, … schemas. A breaking change (removing or renaming a column, changing a type or the grain) to **any** published model means a new major version for **all** published models (ADR 0003), so every `vN` schema always holds the whole product. The old version keeps being built until its deprecation date. Details: [`published-interface.md`](published-interface.md).
+Consumers read the published interface from the `published` schema. A breaking change (removing or renaming a column, changing a type or the grain) is not stopped by any tool: it is a team decision, agreed with consumers before it is merged, and reviewers check MRs that touch `models/published/` for it (ADR 0010). There is no built-in versioning; if a product needs old and new side by side, see [`published-interface.md`](published-interface.md).
 
-Non-breaking changes (a new column, a fix that keeps the contract) go into the current version through the normal feature flow.
+Non-breaking changes (a new column, a fix that keeps the contract) go through the normal feature flow.
 
-![3. Make a breaking change to the published interface (v2 -> v3)](diagrams/workflow-3-breaking.svg)
+![3. Make a breaking change to the published interface](diagrams/workflow-3-breaking.svg)
 
 Source: [`diagrams/workflow-3-breaking.puml`](diagrams/workflow-3-breaking.puml)
 
@@ -170,16 +169,6 @@ The source YAML names the source's prod location; every environment reads that, 
 ![8. Add a new source](diagrams/workflow-8-new-source.svg)
 
 Source: [`diagrams/workflow-8-new-source.puml`](diagrams/workflow-8-new-source.puml)
-
----
-
-## 9. Retire an old published version
-
-After a version's `deprecation_date`, dbt warns on every parse. Remove the old version from every published model in one MR. The old `vN` schema stays in the catalogs (dbt doesn't drop it); drop it by hand once no consumer reads it.
-
-![9. Retire an old published version (v1)](diagrams/workflow-9-retire.svg)
-
-Source: [`diagrams/workflow-9-retire.puml`](diagrams/workflow-9-retire.puml)
 
 ---
 

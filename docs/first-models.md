@@ -28,26 +28,26 @@ Everything went into your **personal environment**: schemas in the team catalog 
 | `<product>__<alias>__seeds` | `order_statuses`, loaded from a CSV file | `seeds/order_statuses.csv` |
 | `<product>__<alias>__staging` | `stg_sample__customers`, `stg_sample__orders` (views) | `models/staging/sample/` |
 | `<product>__<alias>__intermediate` | `int_orders_aggregated_to_customer` (view) | `models/intermediate/` |
-| `<product>__<alias>__v1`, `…__v2` | `customers`, in two versions (tables) | `models/published/` |
+| `<product>__<alias>__published` | `customers` (table) | `models/published/` |
 
 Look at the data in the terminal with `dbt show`, which runs a model's query and prints the first rows:
 
 ```sh
-uv run dbt show --select customers           # the latest version (v2)
+uv run dbt show --select customers           # the published model
 uv run dbt show --select order_statuses      # the seed
 ```
 
 Or open the SQL editor in the Databricks workspace and query the tables, e.g.
 
 ```sql
-select * from <team_catalog>.<product>__<alias>__v2.customers limit 10;
+select * from <team_catalog>.<product>__<alias>__published.customers limit 10;
 ```
 
 ### How the sample fits together
 
 ```text
 stg_sample__customers ──────────────────────────────────────────────┐
-stg_sample__orders ──> int_orders_aggregated_to_customer ──> customers (v1, v2)
+stg_sample__orders ──> int_orders_aggregated_to_customer ──> customers
 seeds/order_statuses.csv ──┘
 ```
 
@@ -55,7 +55,7 @@ seeds/order_statuses.csv ──┘
 - **Sources** declare the tables the product reads from other systems. Models read them with `{{ source('<source>', '<table>') }}`, never with a table name in the SQL.
 - **Staging** (`models/staging/<source>/`): one view per source table, named `stg_<source>__<entity>`. It only renames and casts columns to the project's conventions, without joins or business logic.
 - **Intermediate** (`models/intermediate/`): `int_` models with the business logic, built from staging models and seeds.
-- **Published** (`models/published/`): what consumers of the data product read. These models are versioned and have an enforced contract (more in step 3).
+- **Published** (`models/published/`): what consumers of the data product read. These models have an enforced contract (more in step 3).
 - **Seeds** (`seeds/`): small CSV files of lookup data that dbt loads as tables.
 
 Models refer to each other with `{{ ref('model_name') }}`. That is how dbt knows the build order, and how it puts each model in the right schema for whoever runs it.
@@ -114,9 +114,9 @@ and run `make test SELECT=stg_sample__customers`.
 
 ## 3. Use it in the published interface
 
-Consumers read the **published interface**: the `customers` table in schema `v1` or `v2`. Its columns and types are a contract: dbt refuses to build the model if its result doesn't have exactly the columns and types declared in `models/published/_published.yml`. Adding a column is a non-breaking change, so it goes into the current version, `v2`. Removing or renaming a column is a breaking change, which needs a new version ([`published-interface.md`](published-interface.md)).
+Consumers read the **published interface**: the `customers` table in schema `published`. Its columns and types are a contract: dbt refuses to build the model if its result doesn't have exactly the columns and types declared in `models/published/_published.yml`. Adding a column is a non-breaking change. Removing or renaming a column is a breaking change, which the team agrees with consumers before it is merged ([`published-interface.md`](published-interface.md)).
 
-Add `nation_name` to `customers` v2. In `models/published/customers_v2.sql`, add the column and the join:
+Add `nation_name` to `customers`. In `models/published/customers.sql`, add the column and the join:
 
 ```sql
 select
@@ -142,18 +142,7 @@ In `models/published/_published.yml`, declare the column with its type under the
         data_type: string
 ```
 
-The columns listed there are shared by all versions; each version picks its own with `include`/`exclude`. `v1` includes all columns except those it excludes, so exclude the new one from `v1`, which must not change:
-
-```yaml
-    versions:
-      - v: 1
-        deprecation_date: 2027-06-30
-        columns:
-          - include: all
-            exclude: [total_order_value, number_of_open_orders, nation_name]
-```
-
-Build both versions and everything they need:
+Build it and everything it needs:
 
 ```sh
 make build SELECT=+customers
@@ -217,15 +206,15 @@ When you are ready to build your real product, replace the samples one layer at 
 
    Models read a source table with `{{ source('crm', 'customers') }}`, never with its table name. Every build reads the prod location written here, except in your personal environment, where `source()` reads your own shallow clones of the tables instead (the **source mode**, `clone` by default). Make or refresh the clones with `make clone-sources` after adding a source, and whenever you want fresher data. Your team needs read access to the sources (README, section 1).
 2. **Staging and intermediate models** for the new sources, as in steps 2 to 4: a staging model selects from `source()` instead of generating its rows.
-3. **Published models.** A new product starts its published interface at version 1: `models/published/<model>_v1.sql`, and in the YAML `latest_version: 1` and `versions: [{v: 1}]`, with a `data_type` for every column. Copy the shape of `_published.yml`.
-4. **Delete the samples** once nothing refers to them: `models/staging/sample/`, `models/intermediate/int_orders_aggregated_to_customer.sql`, `models/published/customers_v*.sql`, their entries in the YAML files, and `seeds/order_statuses.csv` and its entry. If you use the local engine, put stand-ins for your own sources in `local/sources.sql`.
+3. **Published models.** Put the models consumers read in `models/published/<model>.sql`, with a `data_type` for every column in the YAML. Copy the shape of `_published.yml`.
+4. **Delete the samples** once nothing refers to them: `models/staging/sample/`, `models/intermediate/int_orders_aggregated_to_customer.sql`, `models/published/customers.sql`, their entries in the YAML files, and `seeds/order_statuses.csv` and its entry. If you use the local engine, put stand-ins for your own sources in `local/sources.sql`.
 5. `make clean-dev` drops your whole personal environment, so the old sample tables don't linger, and `make build` builds it again from scratch.
 
 ### Rules that keep the project working
 
 - Put every model in one of the layer folders. Each folder's schema is set with `+schema` in `dbt_project.yml`; a new folder needs its own `+schema` line, and `make test-tooling` fails if a model has none.
 - Never write a catalog or schema name in a model. Use `source()` and `ref()`.
-- Published models are always versioned and have a `data_type` on every column. An unversioned published model stops the build with an error that says so.
+- Published models have a `data_type` on every column. Treat a change that removes or renames a published column, or changes its type, as breaking: agree it with consumers first.
 - `make build` only ever writes to your own `<product>__<alias>__*` schemas, so try things freely.
 
-More: [`workflows.md`](workflows.md) for every workflow from setup to rollback, [`published-interface.md`](published-interface.md) for versions, and the [dbt documentation](https://docs.getdbt.com/docs/build/projects).
+More: [`workflows.md`](workflows.md) for every workflow from setup to rollback, [`published-interface.md`](published-interface.md) for changing published models, and the [dbt documentation](https://docs.getdbt.com/docs/build/projects).
